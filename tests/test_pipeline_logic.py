@@ -175,6 +175,31 @@ def test_format_duration_human_readable():
     assert format_duration(59.95) == "60.0s" or format_duration(59.95).endswith("s")
 
 
+def test_kg_builder_resume_skips_processed_chunks():
+    """from_graph round-trips the graph and reports processed chunk ids."""
+    from publaynet_mmrag.kg.build import KnowledgeGraphBuilder
+    from publaynet_mmrag.kg.extract import Entity
+
+    builder = KnowledgeGraphBuilder(cooccurrence=True)
+    chunk = Chunk(
+        chunk_id="DOC:0:c0", doc_id="DOC", page_index=0, text="t", region_ids=["r"]
+    )
+    builder.add_chunk(chunk, [Entity(text="BERT", label="model", score=0.9)])
+    assert "DOC:0:c0" in builder.processed_chunk_ids()
+
+    # Re-wrapping the same graph preserves processed ids and the entity index.
+    resumed = KnowledgeGraphBuilder.from_graph(builder.graph, cooccurrence=True)
+    assert resumed.processed_chunk_ids() == {"DOC:0:c0"}
+    assert resumed._name_index.get("bert") is not None
+
+
+def test_streaming_defaults_to_false():
+    """Streaming is off by default (download up front, get an ETA)."""
+    from publaynet_mmrag.config import IngestConfig
+
+    assert IngestConfig().streaming is False
+
+
 def test_retrieval_metrics_basic():
     """Recall, MRR and nDCG follow the gold rank as expected."""
     rank = rm.gold_rank(["a", "b", "c"], ["d1", "d2", "d3"], "b", "d2")

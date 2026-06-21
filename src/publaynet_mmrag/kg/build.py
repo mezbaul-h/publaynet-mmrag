@@ -123,13 +123,58 @@ class KnowledgeGraphBuilder:
                 chunk_id=chunk.chunk_id,
             )
 
+    @classmethod
+    def from_graph(
+        cls, graph: nx.MultiDiGraph, cooccurrence: bool = True
+    ) -> "KnowledgeGraphBuilder":
+        """Wraps an existing graph for incremental resumption.
+
+        Rebuilds the entity name index from the loaded graph so that entity
+        de-duplication continues to work across a resumed run.
+
+        Args:
+            graph: A previously built/loaded graph.
+            cooccurrence: Whether to add co-occurrence edges (as in ``__init__``).
+
+        Returns:
+            A builder operating on ``graph``.
+        """
+        builder = cls(cooccurrence=cooccurrence)
+        builder.graph = graph
+        for node, data in graph.nodes(data=True):
+            if data.get("ntype") == ENTITY:
+                name = str(data.get("name", "")).lower().strip()
+                if name:
+                    builder._name_index[name] = node
+        return builder
+
+    def processed_chunk_ids(self) -> set[str]:
+        """Returns the ids of chunks already present in the graph.
+
+        Returns:
+            The set of chunk-node ids, used to skip already-ingested chunks
+            when resuming.
+        """
+        return {
+            node
+            for node, data in self.graph.nodes(data=True)
+            if data.get("ntype") == CHUNK
+        }
+
     def save(self, path: str) -> None:
-        """Persists the graph to GraphML.
+        """Persists the graph to GraphML atomically.
+
+        Writes to a temporary file and renames it into place, so a crash during
+        a periodic checkpoint cannot leave a half-written, unreadable graph.
 
         Args:
             path: Destination ``.graphml`` path.
         """
-        nx.write_graphml(self.graph, path)
+        import os
+
+        tmp = f"{path}.tmp"
+        nx.write_graphml(self.graph, tmp)
+        os.replace(tmp, path)
 
 
 def load_graph(path: str) -> nx.MultiDiGraph:

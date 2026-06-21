@@ -46,7 +46,7 @@ class IngestConfig(BaseModel):
     coco_annotations: str = ""
     coco_image_dir: str = ""
     max_pages: int = 0  # 0 means no limit.
-    streaming: bool = True  # WebDataset only; False downloads shards up front.
+    streaming: bool = False  # WebDataset only; True streams without downloading.
 
 
 class ModelsConfig(BaseModel):
@@ -105,6 +105,7 @@ class KGConfig(BaseModel):
     ner_threshold: float = 0.5
     use_llm_relations: bool = True
     cooccurrence: bool = True
+    checkpoint_every: int = 200  # Save the graph every N chunks (0 = only at end).
 
 
 class GenerationConfig(BaseModel):

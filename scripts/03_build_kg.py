@@ -30,14 +30,45 @@ from scripts._common import add_config_args, resolve_config  # noqa: E402
 def run(config: Config) -> None:
     """Runs Stage 3 knowledge-graph construction.
 
+    Resumable: if a graph already exists it is loaded and the chunks already in
+    it are skipped, so a re-run continues rather than rebuilding. The graph is
+    checkpointed to disk every ``checkpoint_every`` chunks (atomically), so a
+    crash loses at most that many chunks of work. Models are loaded lazily, so a
+    fully-completed resume loads nothing. To rebuild from scratch, delete the
+    graph file.
+
     Args:
         config: The active run configuration.
     """
     chunks = [Chunk.from_dict(row) for row in read_jsonl(config.paths.chunks_path)]
+    os.makedirs(os.path.dirname(config.paths.kg_path) or ".", exist_ok=True)
 
     import time
 
     start = time.perf_counter()
+
+    # Resume from an existing graph if present.
+    if os.path.exists(config.paths.kg_path):
+        from publaynet_mmrag.kg.build import load_graph
+
+        builder = KnowledgeGraphBuilder.from_graph(
+            load_graph(config.paths.kg_path), cooccurrence=config.kg.cooccurrence
+        )
+        done = builder.processed_chunk_ids()
+    else:
+        builder = KnowledgeGraphBuilder(cooccurrence=config.kg.cooccurrence)
+        done = set()
+
+    pending = [c for c in chunks if c.chunk_id not in done]
+    if done:
+        print(
+            f"Resuming KG: {len(done)} chunks already in graph, {len(pending)} to go."
+        )
+    if not pending:
+        print("All chunks already in the graph; nothing to do.")
+        builder.save(config.paths.kg_path)
+        print(f"Stage 3 finished in {format_duration(time.perf_counter() - start)}.")
+        return
 
     entity_extractor = EntityExtractor(
         model_name=config.models.ner_model,
@@ -59,13 +90,15 @@ def run(config: Config) -> None:
         llm.load()
         relation_extractor = RelationExtractor(llm=llm)
 
-    builder = KnowledgeGraphBuilder(cooccurrence=config.kg.cooccurrence)
     from tqdm import tqdm
 
-    for chunk in tqdm(chunks, desc="Stage 3: KG", unit="chunk"):
+    checkpoint_every = config.kg.checkpoint_every
+    for i, chunk in enumerate(tqdm(pending, desc="Stage 3: KG", unit="chunk"), start=1):
         entities = entity_extractor.extract(chunk.text)
         triples = relation_extractor.extract(chunk.text) if relation_extractor else []
         builder.add_chunk(chunk, entities, triples)
+        if checkpoint_every and i % checkpoint_every == 0:
+            builder.save(config.paths.kg_path)
 
     entity_extractor.unload()
     if llm is not None:

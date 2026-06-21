@@ -76,19 +76,31 @@ def run(config: Config, with_image: bool) -> None:
     store.create_collections(with_image=with_image)
 
     text_embedder = TextEmbedder(model_name=config.models.text_embed_model)
-    text_embedder.load()
-    batch = 64
-    from tqdm import tqdm
+    pending = store.new_text_chunks(chunks)
+    skipped = len(chunks) - len(pending)
+    if not pending:
+        print(f"All {len(chunks)} text chunks already indexed; nothing to do.")
+    else:
+        if skipped:
+            print(
+                f"Resuming: {skipped} text chunks already indexed, {len(pending)} to go."
+            )
+        text_embedder.load()
+        batch = 64
+        from tqdm import tqdm
 
-    for start in tqdm(range(0, len(chunks), batch), desc="Stage 2: text", unit="batch"):
-        part = chunks[start : start + batch]
-        embeddings = text_embedder.embed([c.text for c in part])
-        store.upsert_text(part, embeddings)
-    text_embedder.unload()
-    print(f"Indexed {len(chunks)} text chunks.")
+        for start in tqdm(
+            range(0, len(pending), batch), desc="Stage 2: text", unit="batch"
+        ):
+            part = pending[start : start + batch]
+            embeddings = text_embedder.embed([c.text for c in part])
+            store.upsert_text(part, embeddings)
+        text_embedder.unload()
+        print(f"Indexed {len(pending)} text chunks.")
 
     if with_image:
         regions = _load_visual_regions(config.paths.regions_dir)
+        regions = store.new_image_regions(regions)
         if regions:
             image_embedder = ImageEmbedder(
                 model_name=config.models.image_embed_model,
@@ -108,7 +120,7 @@ def run(config: Config, with_image: bool) -> None:
             image_embedder.unload()
             print(f"Indexed {len(regions)} visual regions.")
         else:
-            print("No visual regions with crops found; skipping image index.")
+            print("No new visual regions to index.")
 
     print(f"Stage 2 finished in {format_duration(time.perf_counter() - _t0)}.")
 

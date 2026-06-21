@@ -59,26 +59,32 @@ class VectorStore:
         self.client = QdrantClient(path=path)
 
     def create_collections(self, with_image: bool = True) -> None:
-        """Creates the text and (optionally) image collections.
+        """Creates the text and (optionally) image collections if missing.
 
-        Existing collections are recreated so a rebuild starts clean.
+        Existing collections are left intact so a re-run resumes rather than
+        wiping. Combined with stable point ids and ``new_*`` filtering, this
+        makes indexing idempotent and resumable. To rebuild from scratch, delete
+        the store directory.
 
         Args:
             with_image: Whether to create the image collection.
         """
         from qdrant_client import models
 
-        self.client.recreate_collection(
-            collection_name=schema.TEXT_COLLECTION,
-            vectors_config={
-                schema.DENSE_VECTOR: models.VectorParams(
-                    size=self.text_dim, distance=models.Distance.COSINE
-                )
-            },
-            sparse_vectors_config={schema.SPARSE_VECTOR: models.SparseVectorParams()},
-        )
-        if with_image:
-            self.client.recreate_collection(
+        if not self.client.collection_exists(schema.TEXT_COLLECTION):
+            self.client.create_collection(
+                collection_name=schema.TEXT_COLLECTION,
+                vectors_config={
+                    schema.DENSE_VECTOR: models.VectorParams(
+                        size=self.text_dim, distance=models.Distance.COSINE
+                    )
+                },
+                sparse_vectors_config={
+                    schema.SPARSE_VECTOR: models.SparseVectorParams()
+                },
+            )
+        if with_image and not self.client.collection_exists(schema.IMAGE_COLLECTION):
+            self.client.create_collection(
                 collection_name=schema.IMAGE_COLLECTION,
                 vectors_config={
                     schema.IMAGE_VECTOR: models.VectorParams(
@@ -86,6 +92,56 @@ class VectorStore:
                     )
                 },
             )
+
+    def _existing_ids(self, collection: str) -> set[str]:
+        """Returns the set of point ids already present in a collection.
+
+        Args:
+            collection: The collection to scan.
+
+        Returns:
+            All point ids (as strings); empty if the collection is absent.
+        """
+        if not self.client.collection_exists(collection):
+            return set()
+        ids: set[str] = set()
+        offset = None
+        while True:
+            records, offset = self.client.scroll(
+                collection_name=collection,
+                limit=1000,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            ids.update(str(record.id) for record in records)
+            if offset is None:
+                break
+        return ids
+
+    def new_text_chunks(self, chunks: list[Chunk]) -> list[Chunk]:
+        """Filters chunks to those not yet indexed (for resumable indexing).
+
+        Args:
+            chunks: All candidate chunks.
+
+        Returns:
+            The subset whose stable point id is not already in the store.
+        """
+        existing = self._existing_ids(schema.TEXT_COLLECTION)
+        return [c for c in chunks if _point_id(c.chunk_id) not in existing]
+
+    def new_image_regions(self, regions: list[Region]) -> list[Region]:
+        """Filters visual regions to those not yet indexed.
+
+        Args:
+            regions: All candidate visual regions.
+
+        Returns:
+            The subset whose stable point id is not already in the store.
+        """
+        existing = self._existing_ids(schema.IMAGE_COLLECTION)
+        return [r for r in regions if _point_id(r.region_id) not in existing]
 
     def upsert_text(self, chunks: list[Chunk], embeddings: list[TextEmbedding]) -> None:
         """Upserts text chunks with dense and sparse vectors.

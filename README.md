@@ -181,6 +181,15 @@ LLM judge scores (each costs two extra LLM calls; `0` = all); `--no-judge` (or
 `eval.use_llm_judge: false`) skips generation metrics entirely, which makes
 ablation sweeps many times faster.
 
+**Resumability.** Stages 1-3 resume automatically: re-run the same command and
+each detects completed work on disk and skips it, so a crash mid-run is not
+fatal. Stage 1 writes one region file per page and skips pages whose file
+exists; Stage 2 skips chunks/regions already in the index (stable point ids);
+Stage 3 loads the existing graph, skips chunks already in it, and checkpoints
+every `kg.checkpoint_every` chunks. No flags are needed. Because "done" means
+"on disk", re-running a finished stage is a fast no-op; to rebuild a stage from
+scratch, delete its output (the region dir, the Qdrant dir, or the graph file).
+
 **Progress and downloads.** Model weights are fetched from the Hugging Face Hub
 on first use, lazily per stage, each with a download progress bar; they cache to
 `~/.cache/huggingface` so later runs are quiet. Every stage shows a `tqdm`

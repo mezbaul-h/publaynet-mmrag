@@ -23,9 +23,10 @@ ingest:
   coco_annotations: ""
   coco_image_dir: ""
   max_pages: 0                 # 0 = no limit; set small for a quick smoke test.
-  streaming: false             # WebDataset only. Set false to download the
-                               # subset shards up front (shows a progress bar);
-                               # keep true to stream without a full download.
+  streaming: false             # WebDataset only. False downloads the subset
+                               # shards up front (visible bar + full ETA, ~1.22
+                               # GB); set true to stream without downloading
+                               # (good for tiny runs, but no ETA).
 
 models:
   device: cuda                 # Index/build stages (throughput-bound).
@@ -62,6 +63,7 @@ kg:
   ner_threshold: 0.5
   use_llm_relations: true
   cooccurrence: true
+  checkpoint_every: 200        # Save the graph every N chunks (0 = only at end).
 
 generation:
   temperature: 0.1
