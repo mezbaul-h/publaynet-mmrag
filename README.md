@@ -118,8 +118,10 @@ pip install -e ".[all,quant]"  # truly everything, if you want 4-bit too
 The default generator is **Qwen3-4B-Instruct-2507 in FP16**, loaded in-process. It
 needs only the core install and fits a 12 GiB GPU alongside the retrieval
 models, which run on the CPU at query time (`models.retrieval_device: cpu`) so
-they do not compete with the LLM for VRAM. Qwen3 needs a recent Transformers
-(exact floor pinned in `pyproject.toml`).
+they do not compete with the LLM for VRAM. The stack pins Transformers to
+exactly `4.56.1` (see `pyproject.toml`) -- the only version observed to work
+across Surya, the Qwen3 LLM and the Qwen3-VL captioner together. Do not upgrade
+or downgrade it.
 
 To run a larger model on the same card there are two routes:
 
@@ -189,6 +191,9 @@ while **streaming** (the default): the page total is not known up front, so its
 bar shows a running count and rate rather than an ETA -- set
 `ingest.streaming: false` in `configs/base.yaml` to download the four shards
 first (with a download bar) and get a full ETA over the subset (fine at 1.22 GB).
+Surya's own per-page detection/recognition bars are hidden by default so they do
+not scroll the Stage 1 bar out of view; pass `--verbose-ocr` to Stage 1 to show
+them.
 
 ## 6. Scaling to the full dataset
 

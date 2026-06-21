@@ -92,9 +92,9 @@ class LocalLLM:
                 self.model_name, quantization_config=quant, device_map=self.device
             ).eval()
         else:
-            torch_dtype = "auto" if self.dtype == "auto" else getattr(torch, self.dtype)
+            load_dtype = "auto" if self.dtype == "auto" else getattr(torch, self.dtype)
             self._model = (
-                AutoModelForCausalLM.from_pretrained(self.model_name, dtype=torch_dtype)
+                AutoModelForCausalLM.from_pretrained(self.model_name, dtype=load_dtype)
                 .to(self.device)
                 .eval()
             )

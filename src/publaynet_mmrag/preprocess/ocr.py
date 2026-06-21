@@ -26,15 +26,20 @@ class SuryaOcrEngine:
 
     Attributes:
         device: Torch device string used via the ``TORCH_DEVICE`` env var.
+        verbose: If ``False`` (default), Surya's own per-page detection /
+            recognition progress bars are suppressed so they do not scroll the
+            caller's Stage 1 progress bar out of view.
     """
 
-    def __init__(self, device: str = "cuda") -> None:
+    def __init__(self, device: str = "cuda", verbose: bool = False) -> None:
         """Initialises the engine.
 
         Args:
             device: Torch device string (e.g. ``"cuda"`` or ``"cpu"``).
+            verbose: Show Surya's per-page progress bars (off by default).
         """
         self.device = device
+        self.verbose = verbose
         self._recognition: Any = None
         self._detection: Any = None
 
@@ -43,6 +48,11 @@ class SuryaOcrEngine:
         import os
 
         os.environ.setdefault("TORCH_DEVICE", self.device)
+        # Suppress Surya's internal tqdm bars (Surya-specific setting; read from
+        # the environment at import time, so it must be set before importing
+        # surya). This does not affect the caller's own tqdm progress bar.
+        if not self.verbose:
+            os.environ.setdefault("DISABLE_TQDM", "true")
         from surya.detection import DetectionPredictor
         from surya.foundation import FoundationPredictor
         from surya.recognition import RecognitionPredictor
@@ -81,13 +91,14 @@ class SuryaOcrEngine:
             pass
 
 
-def build_ocr_engine(device: str = "cuda") -> SuryaOcrEngine:
+def build_ocr_engine(device: str = "cuda", verbose: bool = False) -> SuryaOcrEngine:
     """Constructs the Surya OCR engine.
 
     Args:
         device: Torch device string for the predictors.
+        verbose: Show Surya's per-page progress bars (off by default).
 
     Returns:
         A configured :class:`SuryaOcrEngine`.
     """
-    return SuryaOcrEngine(device=device)
+    return SuryaOcrEngine(device=device, verbose=verbose)

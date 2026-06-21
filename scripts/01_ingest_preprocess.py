@@ -30,12 +30,13 @@ from publaynet_mmrag.types import Category, Chunk, Region, write_jsonl  # noqa: 
 from scripts._common import add_config_args, resolve_config  # noqa: E402
 
 
-def run(config: Config, caption_figures: bool) -> None:
+def run(config: Config, caption_figures: bool, verbose_ocr: bool = False) -> None:
     """Runs Stage 1 over the configured dataset.
 
     Args:
         config: The active run configuration.
         caption_figures: Whether to generate VLM captions for visual regions.
+        verbose_ocr: Show Surya's per-page progress bars (off by default).
     """
     os.makedirs(config.paths.regions_dir, exist_ok=True)
     os.makedirs(config.paths.crops_dir, exist_ok=True)
@@ -45,7 +46,7 @@ def run(config: Config, caption_figures: bool) -> None:
     start = time.perf_counter()
 
     source = build_source(config)
-    ocr = build_ocr_engine(device=config.models.device)
+    ocr = build_ocr_engine(device=config.models.device, verbose=verbose_ocr)
     ocr.load()
     captioner = None
     if caption_figures:
@@ -132,8 +133,17 @@ def main() -> None:
         action="store_true",
         help="Generate VLM captions for figure/table regions.",
     )
+    parser.add_argument(
+        "--verbose-ocr",
+        action="store_true",
+        help="Show Surya's per-page progress bars (off by default).",
+    )
     args = parser.parse_args()
-    run(resolve_config(args), caption_figures=args.caption_figures)
+    run(
+        resolve_config(args),
+        caption_figures=args.caption_figures,
+        verbose_ocr=args.verbose_ocr,
+    )
 
 
 if __name__ == "__main__":
