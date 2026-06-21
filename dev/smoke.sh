@@ -18,6 +18,7 @@ python - "$SMOKE_CFG" << 'PY'
 import sys, yaml
 cfg = yaml.safe_load(open("configs/base.yaml"))
 cfg["ingest"]["max_pages"] = 1
+cfg["ingest"]["streaming"] = True
 cfg["eval"]["num_questions"] = 2
 cfg["eval"]["judge_sample_size"] = 2
 # Redirect every artifact path under data/smoke/ (already git-ignored via data/).

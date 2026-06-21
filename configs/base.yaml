@@ -23,7 +23,7 @@ ingest:
   coco_annotations: ""
   coco_image_dir: ""
   max_pages: 0                 # 0 = no limit; set small for a quick smoke test.
-  streaming: true              # WebDataset only. Set false to download the
+  streaming: false             # WebDataset only. Set false to download the
                                # subset shards up front (shows a progress bar);
                                # keep true to stream without a full download.
 
