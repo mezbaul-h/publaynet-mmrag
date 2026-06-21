@@ -14,10 +14,30 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+
+def _ensure_serve_deps() -> None:
+    """Checks the optional serving dependencies are installed.
+
+    Raises:
+        ImportError: With install guidance if FastAPI/uvicorn are missing.
+    """
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "Serving needs the optional 'serve' extra (FastAPI + uvicorn):\n"
+            '    pip install -e ".[serve]"'
+        ) from exc
+
+
+_ensure_serve_deps()
+
 from fastapi import FastAPI  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from publaynet_mmrag.pipeline import RAGSystem, build_system  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from scripts._common import resolve_config  # noqa: E402
 
 app = FastAPI(title="PubLayNet Multimodal RAG")
@@ -99,7 +119,14 @@ def main() -> None:
         )
 
     global _system
+    import time
+
+    start = time.perf_counter()
     _system = build_system(resolve_config(args))
+    print(
+        f"System ready in {format_duration(time.perf_counter() - start)}; "
+        f"serving on http://{args.host}:{args.port}"
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 

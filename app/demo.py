@@ -15,10 +15,29 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
+
+def _ensure_demo_deps() -> None:
+    """Checks the optional demo dependency is installed.
+
+    Raises:
+        ImportError: With install guidance if Gradio is missing.
+    """
+    try:
+        import gradio  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "The demo needs the optional 'demo' extra (Gradio):\n"
+            '    pip install -e ".[demo]"'
+        ) from exc
+
+
+_ensure_demo_deps()
+
 import gradio as gr  # noqa: E402
 
 from publaynet_mmrag.config import Config, load_config  # noqa: E402
 from publaynet_mmrag.pipeline import RAGSystem, build_system  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Region, read_jsonl  # noqa: E402
 
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "configs")
@@ -79,22 +98,38 @@ def answer_query(question: str, mode: str):
     Returns:
         A tuple of (answer markdown, evidence rows, graph-paths markdown).
     """
+    import time
+
+    start = time.perf_counter()
     system = _get_system(mode)
     _index_regions(system.config)
     answer = system.answer(question)
     provenance = system.explain(answer)
+    elapsed = format_duration(time.perf_counter() - start)
+    print(f"[demo] answered ({mode}) in {elapsed}")
 
     md = f"### Answer\n{answer.text}\n"
+    md += f"\n_Answered in {elapsed}._"
     if answer.reasoning:
-        md += f"\n<details><summary>Reasoning</summary>\n\n{answer.reasoning}\n</details>"
+        md += (
+            f"\n<details><summary>Reasoning</summary>\n\n{answer.reasoning}\n</details>"
+        )
 
     rows = [
-        [t.source_id, t.doc_id, t.page_index, t.modality, t.retrieval_source,
-         round(t.score, 3), "yes" if t.cited else ""]
+        [
+            t.source_id,
+            t.doc_id,
+            t.page_index,
+            t.modality,
+            t.retrieval_source,
+            round(t.score, 3),
+            "yes" if t.cited else "",
+        ]
         for t in provenance.evidence
     ]
     paths_md = (
-        "### Knowledge-graph paths\n" + "\n".join(f"- {p}" for p in provenance.graph_paths)
+        "### Knowledge-graph paths\n"
+        + "\n".join(f"- {p}" for p in provenance.graph_paths)
         if provenance.graph_paths
         else "_No graph paths used._"
     )
@@ -108,7 +143,9 @@ def build_ui() -> "gr.Blocks":
         The assembled Gradio ``Blocks`` app.
     """
     with gr.Blocks(title="PubLayNet Multimodal RAG") as demo:
-        gr.Markdown("# PubLayNet Multimodal RAG\nAsk a question over the indexed pages.")
+        gr.Markdown(
+            "# PubLayNet Multimodal RAG\nAsk a question over the indexed pages."
+        )
         with gr.Row():
             question = gr.Textbox(label="Question", scale=4)
             mode = gr.Radio(

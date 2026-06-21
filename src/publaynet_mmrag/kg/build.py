@@ -116,7 +116,10 @@ class KnowledgeGraphBuilder:
             subject = self._resolve_entity(triple.subject, "concept")
             obj = self._resolve_entity(triple.object, "concept")
             self.graph.add_edge(
-                subject, obj, key="RELATES", relation=triple.relation,
+                subject,
+                obj,
+                key="RELATES",
+                relation=triple.relation,
                 chunk_id=chunk.chunk_id,
             )
 

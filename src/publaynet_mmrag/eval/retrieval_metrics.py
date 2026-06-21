@@ -82,9 +82,7 @@ def ndcg_at_k(rank: Optional[int], k: int) -> float:
     return 1.0 / math.log2(rank + 1)
 
 
-def aggregate(
-    per_query_ranks: list[Optional[int]], ks: list[int]
-) -> dict[str, float]:
+def aggregate(per_query_ranks: list[Optional[int]], ks: list[int]) -> dict[str, float]:
     """Aggregates per-query gold ranks into mean metrics.
 
     Args:
@@ -100,9 +98,7 @@ def aggregate(
         "mrr": sum(reciprocal_rank(r) for r in per_query_ranks) / n,
     }
     for k in ks:
-        metrics[f"recall@{k}"] = (
-            sum(recall_at_k(r, k) for r in per_query_ranks) / n
-        )
+        metrics[f"recall@{k}"] = sum(recall_at_k(r, k) for r in per_query_ranks) / n
         metrics[f"ndcg@{k}"] = sum(ndcg_at_k(r, k) for r in per_query_ranks) / n
     return metrics
 

@@ -39,6 +39,7 @@ from publaynet_mmrag.eval.build_qa import synthesise_qa  # noqa: E402
 from publaynet_mmrag.eval.rag_metrics import evaluate_generation  # noqa: E402
 from publaynet_mmrag.pipeline import build_llm, build_system  # noqa: E402
 from publaynet_mmrag.reason.llm import LocalLLM  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Chunk, read_jsonl, write_jsonl  # noqa: E402
 
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "configs")
@@ -116,9 +117,7 @@ def _evaluate_variant(
     metrics = rm.aggregate(ranks, config.eval.ks)
     if use_judge:
         subset = (
-            gen_samples
-            if judge_sample_size <= 0
-            else gen_samples[:judge_sample_size]
+            gen_samples if judge_sample_size <= 0 else gen_samples[:judge_sample_size]
         )
         metrics.update(evaluate_generation(subset, llm=llm, desc=f"[{name}] judge"))
     return metrics
@@ -135,6 +134,10 @@ def run(base_path: str, variant_names: list[str], use_judge: bool) -> None:
     # A reference config (any variant) supplies shared eval/model/path settings.
     ref = load_config(base_path, os.path.join(_CONFIG_DIR, "enhanced.yaml"))
     use_judge = use_judge and ref.eval.use_llm_judge
+
+    import time
+
+    start = time.perf_counter()
 
     llm = build_llm(ref)
     qa = _ensure_qa(ref, llm)
@@ -168,6 +171,7 @@ def run(base_path: str, variant_names: list[str], use_judge: bool) -> None:
 
     print(json.dumps(report, indent=2))
     print(f"\nComparison written to {out_path}")
+    print(f"Stage 4 finished in {format_duration(time.perf_counter() - start)}.")
 
 
 def main() -> None:

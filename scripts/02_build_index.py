@@ -22,6 +22,7 @@ from publaynet_mmrag.config import Config  # noqa: E402
 from publaynet_mmrag.embed.image import ImageEmbedder  # noqa: E402
 from publaynet_mmrag.embed.text import TextEmbedder  # noqa: E402
 from publaynet_mmrag.index.store import VectorStore  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Category, Chunk, Region, read_jsonl  # noqa: E402
 from scripts._common import add_config_args, resolve_config  # noqa: E402
 
@@ -64,6 +65,9 @@ def run(config: Config, with_image: bool) -> None:
         with_image: Whether to index the visual modality.
     """
     chunks = _load_chunks(config.paths.chunks_path)
+    import time
+
+    _t0 = time.perf_counter()
     store = VectorStore(
         path=config.paths.qdrant_path,
         text_dim=config.models.text_embed_dim,
@@ -76,9 +80,7 @@ def run(config: Config, with_image: bool) -> None:
     batch = 64
     from tqdm import tqdm
 
-    for start in tqdm(
-        range(0, len(chunks), batch), desc="Stage 2: text", unit="batch"
-    ):
+    for start in tqdm(range(0, len(chunks), batch), desc="Stage 2: text", unit="batch"):
         part = chunks[start : start + batch]
         embeddings = text_embedder.embed([c.text for c in part])
         store.upsert_text(part, embeddings)
@@ -107,6 +109,8 @@ def run(config: Config, with_image: bool) -> None:
             print(f"Indexed {len(regions)} visual regions.")
         else:
             print("No visual regions with crops found; skipping image index.")
+
+    print(f"Stage 2 finished in {format_duration(time.perf_counter() - _t0)}.")
 
 
 def main() -> None:

@@ -16,6 +16,25 @@ from __future__ import annotations
 from typing import Any
 
 
+def _ensure_bitsandbytes() -> None:
+    """Checks that the optional ``bitsandbytes`` dependency is installed.
+
+    Raises:
+        ImportError: With install guidance if ``bitsandbytes`` is missing. This
+            fails fast with an actionable message rather than letting a raw
+            import error surface from deep inside Transformers.
+    """
+    try:
+        import bitsandbytes  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "llm_load_in_4bit is set but the 'bitsandbytes' package is not "
+            "installed. Install the optional quant extra:\n"
+            '    pip install -e ".[quant]"\n'
+            "or set models.llm_load_in_4bit: false to load in FP16."
+        ) from exc
+
+
 class LocalLLM:
     """A chat-capable causal language model loaded in-process.
 
@@ -61,6 +80,7 @@ class LocalLLM:
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         if self.load_in_4bit:
+            _ensure_bitsandbytes()
             from transformers import BitsAndBytesConfig
 
             quant = BitsAndBytesConfig(
@@ -74,12 +94,22 @@ class LocalLLM:
         else:
             torch_dtype = "auto" if self.dtype == "auto" else getattr(torch, self.dtype)
             self._model = (
-                AutoModelForCausalLM.from_pretrained(
-                    self.model_name, torch_dtype=torch_dtype
-                )
+                AutoModelForCausalLM.from_pretrained(self.model_name, dtype=torch_dtype)
                 .to(self.device)
                 .eval()
             )
+
+        # The pipeline decodes greedily (deterministic, reproducible output) for
+        # every LLM call, so clear the checkpoint's sampling defaults. This makes
+        # the generation config agree with the actual behaviour and stops the
+        # "generation flags not valid under do_sample=False" warning. It changes
+        # no output; greedy decoding already overrode these values.
+        gen_config = getattr(self._model, "generation_config", None)
+        if gen_config is not None:
+            gen_config.do_sample = False
+            for attr in ("temperature", "top_p", "top_k"):
+                if hasattr(gen_config, attr):
+                    setattr(gen_config, attr, None)
 
     def chat(
         self,

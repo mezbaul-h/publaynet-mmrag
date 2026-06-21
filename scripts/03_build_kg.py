@@ -22,6 +22,7 @@ from publaynet_mmrag.kg.extract import (  # noqa: E402
     RelationExtractor,
 )
 from publaynet_mmrag.reason.llm import LocalLLM  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Chunk, read_jsonl  # noqa: E402
 from scripts._common import add_config_args, resolve_config  # noqa: E402
 
@@ -33,6 +34,10 @@ def run(config: Config) -> None:
         config: The active run configuration.
     """
     chunks = [Chunk.from_dict(row) for row in read_jsonl(config.paths.chunks_path)]
+
+    import time
+
+    start = time.perf_counter()
 
     entity_extractor = EntityExtractor(
         model_name=config.models.ner_model,
@@ -70,6 +75,7 @@ def run(config: Config) -> None:
         f"Stage 3 complete: {builder.graph.number_of_nodes()} nodes, "
         f"{builder.graph.number_of_edges()} edges -> {config.paths.kg_path}"
     )
+    print(f"Stage 3 finished in {format_duration(time.perf_counter() - start)}.")
 
 
 def main() -> None:

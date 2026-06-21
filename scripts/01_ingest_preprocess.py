@@ -25,6 +25,7 @@ from publaynet_mmrag.ingest import build_source  # noqa: E402
 from publaynet_mmrag.preprocess.chunk import chunk_page_regions  # noqa: E402
 from publaynet_mmrag.preprocess.ocr import build_ocr_engine  # noqa: E402
 from publaynet_mmrag.preprocess.regions import crop_region, extract_regions  # noqa: E402
+from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Category, Chunk, Region, write_jsonl  # noqa: E402
 from scripts._common import add_config_args, resolve_config  # noqa: E402
 
@@ -38,6 +39,10 @@ def run(config: Config, caption_figures: bool) -> None:
     """
     os.makedirs(config.paths.regions_dir, exist_ok=True)
     os.makedirs(config.paths.crops_dir, exist_ok=True)
+
+    import time
+
+    start = time.perf_counter()
 
     source = build_source(config)
     ocr = build_ocr_engine(device=config.models.device)
@@ -60,9 +65,7 @@ def run(config: Config, caption_figures: bool) -> None:
             "rate). Set ingest.streaming: false for an ETA over the full subset."
         )
     for page in tqdm(source, total=total, desc="Stage 1: pages", unit="page"):
-        region_file = os.path.join(
-            config.paths.regions_dir, f"{page.doc_id}.jsonl"
-        )
+        region_file = os.path.join(config.paths.regions_dir, f"{page.doc_id}.jsonl")
         regions = extract_regions(page, config.paths.crops_dir)
 
         # OCR text-bearing regions in one batch per page.
@@ -100,6 +103,8 @@ def run(config: Config, caption_figures: bool) -> None:
     ocr.unload()
     if captioner is not None:
         captioner.unload()
+
+    print(f"Stage 1 finished in {format_duration(time.perf_counter() - start)}.")
 
 
 def _append_regions(path: str, regions: list[Region], fresh: bool) -> None:

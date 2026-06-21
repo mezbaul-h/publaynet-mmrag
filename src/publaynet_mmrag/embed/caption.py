@@ -57,9 +57,7 @@ class Captioner:
 
         dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
         self._model = (
-            AutoModelForImageTextToText.from_pretrained(
-                self.model_name, torch_dtype=dtype
-            )
+            AutoModelForImageTextToText.from_pretrained(self.model_name, dtype=dtype)
             .to(self.device)
             .eval()
         )
@@ -91,13 +89,15 @@ class Captioner:
         text = self._processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self._processor(
-            text=[text], images=[image], return_tensors="pt"
-        ).to(self.device)
+        inputs = self._processor(text=[text], images=[image], return_tensors="pt").to(
+            self.device
+        )
         with torch.no_grad():
             generated = self._model.generate(**inputs, max_new_tokens=max_new_tokens)
         trimmed = generated[:, inputs["input_ids"].shape[1] :]
-        return self._processor.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
+        return self._processor.batch_decode(trimmed, skip_special_tokens=True)[
+            0
+        ].strip()
 
     def unload(self) -> None:
         """Releases the model and clears the CUDA cache."""

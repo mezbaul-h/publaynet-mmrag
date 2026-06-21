@@ -87,9 +87,7 @@ class VectorStore:
                 },
             )
 
-    def upsert_text(
-        self, chunks: list[Chunk], embeddings: list[TextEmbedding]
-    ) -> None:
+    def upsert_text(self, chunks: list[Chunk], embeddings: list[TextEmbedding]) -> None:
         """Upserts text chunks with dense and sparse vectors.
 
         Args:
@@ -114,9 +112,7 @@ class VectorStore:
             )
         self.client.upsert(schema.TEXT_COLLECTION, points=points)
 
-    def upsert_images(
-        self, regions: list[Region], vectors: list[list[float]]
-    ) -> None:
+    def upsert_images(self, regions: list[Region], vectors: list[list[float]]) -> None:
         """Upserts visual regions with their SigLIP2 vectors.
 
         Args:
@@ -186,13 +182,9 @@ class VectorStore:
         from qdrant_client import models
 
         prefetch = [
+            models.Prefetch(query=dense, using=schema.DENSE_VECTOR, limit=candidate_k),
             models.Prefetch(
-                query=dense, using=schema.DENSE_VECTOR, limit=candidate_k
-            ),
-            models.Prefetch(
-                query=models.SparseVector(
-                    indices=sparse.indices, values=sparse.values
-                ),
+                query=models.SparseVector(indices=sparse.indices, values=sparse.values),
                 using=schema.SPARSE_VECTOR,
                 limit=candidate_k,
             ),

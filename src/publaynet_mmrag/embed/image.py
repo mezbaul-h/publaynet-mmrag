@@ -45,7 +45,7 @@ class ImageEmbedder:
 
         dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
         self._model = (
-            AutoModel.from_pretrained(self.model_name, torch_dtype=dtype)
+            AutoModel.from_pretrained(self.model_name, dtype=dtype)
             .to(self.device)
             .eval()
         )

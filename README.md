@@ -208,15 +208,31 @@ URL by changing one constructor argument. At full scale, swap the in-memory
 NetworkX graph for an embedded graph database (e.g. Kuzu) behind the same
 `kg.query` interface.
 
-## 7. Tests
+## 7. Development
+
+Install the dev tools (`ruff`, `pytest`) and use the helper scripts in `dev/`:
 
 ```bash
 pip install -e ".[dev]"
-pytest                # pure-logic tests: parsing, config, chunking, metrics, KG
+
+dev/lint.sh        # check lint + formatting (no changes)
+dev/lint-fix.sh    # auto-fix lint and reformat in place
+dev/test.sh        # run the unit-test suite (extra args pass through to pytest)
+dev/smoke.sh       # end-to-end pipeline smoke test on a single page
 ```
 
-These cover the framework-free logic and need no GPU, model downloads or
-network access.
+The unit tests cover the framework-free logic (parsing, config composition,
+chunking, retrieval metrics, KG build, NER windowing, the duration formatter and
+the dependency guards) and need no GPU, model downloads or network access.
+
+`dev/smoke.sh` runs the full pipeline -- stages 1 through 4 in enhanced mode --
+on a single page, to verify everything wires together end to end. (Stage 5,
+serving, is an optional feature rather than part of the pipeline, so it is not
+included.) It writes all artifacts under `data/smoke/` so a real run's `data/`
+is untouched, builds its config from `configs/base.yaml` on the fly (no
+duplication), and uses a tiny QA set. It is a wiring check, not a quality check:
+with one page the metrics are meaningless. It needs a GPU and downloads the
+models on first use.
 
 ## 8. Version notes
 

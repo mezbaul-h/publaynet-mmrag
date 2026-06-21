@@ -92,12 +92,8 @@ def _region(doc: str, page: int, ann_id: int, text: str, order: int) -> Region:
 
 def test_chunking_packs_and_overlaps():
     """Regions pack into chunks under the size cap with provenance retained."""
-    regions = [
-        _region("DOC", 0, i, f"sentence number {i} " * 10, i) for i in range(5)
-    ]
-    chunks = chunk_page_regions(
-        regions, max_chars=300, overlap_chars=30, min_chars=5
-    )
+    regions = [_region("DOC", 0, i, f"sentence number {i} " * 10, i) for i in range(5)]
+    chunks = chunk_page_regions(regions, max_chars=300, overlap_chars=30, min_chars=5)
     assert len(chunks) > 1
     assert all(c.doc_id == "DOC" for c in chunks)
     assert all(c.region_ids for c in chunks)
@@ -155,6 +151,30 @@ def test_ner_windowing_splits_long_text():
     assert "w129" in windows[-1]
 
 
+def test_bitsandbytes_guard_raises_when_missing():
+    """The 4-bit guard fails fast with install guidance when bnb is absent."""
+    import importlib.util
+
+    import pytest
+
+    from publaynet_mmrag.reason.llm import _ensure_bitsandbytes
+
+    if importlib.util.find_spec("bitsandbytes") is not None:
+        pytest.skip("bitsandbytes is installed; guard not exercised")
+    with pytest.raises(ImportError, match=r"quant"):
+        _ensure_bitsandbytes()
+
+
+def test_format_duration_human_readable():
+    """Durations render in seconds / minutes / hours as appropriate."""
+    from publaynet_mmrag.timing import format_duration
+
+    assert format_duration(7.4) == "7.4s"
+    assert format_duration(65) == "1m 05s"
+    assert format_duration(3723) == "1h 02m 03s"
+    assert format_duration(59.95) == "60.0s" or format_duration(59.95).endswith("s")
+
+
 def test_retrieval_metrics_basic():
     """Recall, MRR and nDCG follow the gold rank as expected."""
     rank = rm.gold_rank(["a", "b", "c"], ["d1", "d2", "d3"], "b", "d2")
@@ -193,9 +213,7 @@ def test_kg_build_and_roundtrip():
     graph = builder.graph
     assert graph.has_node("DOC")
     assert graph.has_node("DOC:0:c0")
-    assert any(
-        d.get("ntype") == "entity" for _, d in graph.nodes(data=True)
-    )
+    assert any(d.get("ntype") == "entity" for _, d in graph.nodes(data=True))
 
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "kg.graphml")

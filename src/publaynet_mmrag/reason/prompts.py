@@ -45,9 +45,7 @@ def format_evidence(items: list[RetrievedItem]) -> tuple[str, dict[str, str]]:
     return "\n\n".join(lines), tag_map
 
 
-def build_user_prompt(
-    question: str, evidence: str, chain_of_thought: bool
-) -> str:
+def build_user_prompt(question: str, evidence: str, chain_of_thought: bool) -> str:
     """Assembles the user prompt from the question and evidence.
 
     Args:
@@ -59,8 +57,4 @@ def build_user_prompt(
         The complete user prompt.
     """
     instruction = COT_INSTRUCTION if chain_of_thought else DIRECT_INSTRUCTION
-    return (
-        f"Question: {question}\n\n"
-        f"Evidence:\n{evidence}\n\n"
-        f"{instruction}"
-    )
+    return f"Question: {question}\n\nEvidence:\n{evidence}\n\n{instruction}"

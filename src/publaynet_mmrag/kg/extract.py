@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -180,9 +180,7 @@ class RelationExtractor:
             The parsed triples; an empty list if parsing fails.
         """
         content = self.llm.chat(
-            messages=[
-                {"role": "user", "content": _RELATION_PROMPT.format(text=text)}
-            ],
+            messages=[{"role": "user", "content": _RELATION_PROMPT.format(text=text)}],
             temperature=0.0,
         )
         return _parse_triples(content)

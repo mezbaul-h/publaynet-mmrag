@@ -76,8 +76,7 @@ def render_subgraph(graph, entity_names: list[str], out_path: str, hops: int = 1
         node
         for node, data in graph.nodes(data=True)
         if data.get("ntype") == ENTITY
-        and str(data.get("name", "")).lower()
-        in {name.lower() for name in entity_names}
+        and str(data.get("name", "")).lower() in {name.lower() for name in entity_names}
     ]
     if not anchors:
         return None

@@ -53,12 +53,19 @@ def synthesise_qa(
     from tqdm import tqdm
 
     for chunk in tqdm(sample, desc="QA synthesis", unit="q"):
-        question = llm.chat(
-            messages=[
-                {"role": "user", "content": _QUESTION_PROMPT.format(text=chunk.text)}
-            ],
-            temperature=0.2,
-        ).strip().strip('"')
+        question = (
+            llm.chat(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": _QUESTION_PROMPT.format(text=chunk.text),
+                    }
+                ],
+                temperature=0.2,
+            )
+            .strip()
+            .strip('"')
+        )
         if not question:
             continue
         rows.append(

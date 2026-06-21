@@ -27,6 +27,7 @@ def _reading_order(annotations: list[dict]) -> list[int]:
         Indices into ``annotations`` sorted by vertical then horizontal
         position, using a coarse row band to group side-by-side regions.
     """
+
     def sort_key(index: int) -> tuple[float, float]:
         bbox = annotations[index]["bbox"]
         # Quantise the y coordinate into 20 px bands so columns read sensibly.
