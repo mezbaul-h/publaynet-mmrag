@@ -121,24 +121,27 @@ class EntityExtractor:
         """
         if self._model is None:
             self.load()
+        from publaynet_mmrag.quiet import silence_stderr
+
         seen: set[tuple[str, str]] = set()
         entities: list[Entity] = []
-        for window in self._windows(text):
-            spans = self._model.predict_entities(
-                window, self.labels, threshold=self.threshold
-            )
-            for span in spans:
-                key = (span["text"].lower().strip(), span["label"])
-                if key in seen or not key[0]:
-                    continue
-                seen.add(key)
-                entities.append(
-                    Entity(
-                        text=span["text"].strip(),
-                        label=span["label"],
-                        score=span["score"],
-                    )
+        with silence_stderr():
+            for window in self._windows(text):
+                spans = self._model.predict_entities(
+                    window, self.labels, threshold=self.threshold
                 )
+                for span in spans:
+                    key = (span["text"].lower().strip(), span["label"])
+                    if key in seen or not key[0]:
+                        continue
+                    seen.add(key)
+                    entities.append(
+                        Entity(
+                            text=span["text"].strip(),
+                            label=span["label"],
+                            score=span["score"],
+                        )
+                    )
         return entities
 
     def unload(self) -> None:

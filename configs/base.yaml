@@ -38,6 +38,8 @@ models:
   reranker_model: BAAI/bge-reranker-v2-m3
   ner_model: urchade/gliner_medium-v2.1
   caption_model: Qwen/Qwen3-VL-4B-Instruct
+  ocr_detector_batch_size: 24     # Lower if Stage 1 OOMs; raise for more speed  (280mb vram on avg each; default: 32)
+  ocr_recognition_batch_size: 128 # on a larger GPU. Defaults target 12 GiB.  (50mb vram on avg each; default: 256)
   llm_model: Qwen/Qwen3-4B-Instruct-2507   # Hugging Face id; runs in-process.
   llm_dtype: float16
   llm_load_in_4bit: false               # true needs the optional 'quant' extra.
@@ -61,7 +63,10 @@ retrieval:
 kg:
   entity_labels: [method, dataset, metric, result, author, task, model]
   ner_threshold: 0.5
-  use_llm_relations: true
+  use_llm_relations: true       # false = entities + co-occurrence only (minutes
+                                # vs hours over the full corpus).
+  max_relation_chunks: 2000        # 0 = LLM relations on all chunks; set e.g. 2000
+                                # to cap the slow LLM relation extraction.
   cooccurrence: true
   checkpoint_every: 200        # Save the graph every N chunks (0 = only at end).
 

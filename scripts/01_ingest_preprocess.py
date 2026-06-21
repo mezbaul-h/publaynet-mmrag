@@ -61,7 +61,12 @@ def run(config: Config, caption_figures: bool, verbose_ocr: bool = False) -> Non
     start = time.perf_counter()
 
     source = build_source(config)
-    ocr = build_ocr_engine(device=config.models.device, verbose=verbose_ocr)
+    ocr = build_ocr_engine(
+        device=config.models.device,
+        verbose=verbose_ocr,
+        detector_batch_size=config.models.ocr_detector_batch_size,
+        recognition_batch_size=config.models.ocr_recognition_batch_size,
+    )
     ocr_loaded = False
     captioner = (
         Captioner(model_name=config.models.caption_model, device=config.models.device)
@@ -80,36 +85,49 @@ def run(config: Config, caption_figures: bool, verbose_ocr: bool = False) -> Non
 
     processed = 0
     skipped = 0
+
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
+    def _finalise_on_interrupt() -> None:
+        n = _regenerate_chunks(config)
+        print(
+            f"Wrote {n} chunks from {processed + skipped} completed pages; re-run to resume."
+        )
+
     bar = tqdm(source, total=total, desc="Stage 1: pages", unit="page")
-    for page in bar:
-        page_file = os.path.join(config.paths.regions_dir, f"{page.key}.jsonl")
-        if os.path.exists(page_file):
-            skipped += 1
+    with graceful_shutdown(
+        on_interrupt=_finalise_on_interrupt,
+        message="Stage 1 interrupted; finalising chunks...",
+    ):
+        for page in bar:
+            page_file = os.path.join(config.paths.regions_dir, f"{page.key}.jsonl")
+            if os.path.exists(page_file):
+                skipped += 1
+                bar.set_postfix(ocr=processed, skip=skipped)
+                continue
+
+            regions = extract_regions(page, config.paths.crops_dir)
+
+            # OCR text-bearing regions in one batch per page (load OCR lazily).
+            text_regions = [r for r in regions if r.category in Category.textual()]
+            if text_regions:
+                if not ocr_loaded:
+                    ocr.load()
+                    ocr_loaded = True
+                crops = [crop_region(page, r) for r in text_regions]
+                texts = ocr.recognise(crops)
+                for region, text in zip(text_regions, texts):
+                    region.text = text
+
+            # Optional captioning of visual regions.
+            if captioner is not None:
+                for region in regions:
+                    if region.category in Category.visual() and region.crop_path:
+                        region.caption = captioner.caption(crop_region(page, region))
+
+            _write_regions_atomic(page_file, regions)
+            processed += 1
             bar.set_postfix(ocr=processed, skip=skipped)
-            continue
-
-        regions = extract_regions(page, config.paths.crops_dir)
-
-        # OCR text-bearing regions in one batch per page (load OCR on first use).
-        text_regions = [r for r in regions if r.category in Category.textual()]
-        if text_regions:
-            if not ocr_loaded:
-                ocr.load()
-                ocr_loaded = True
-            crops = [crop_region(page, r) for r in text_regions]
-            texts = ocr.recognise(crops)
-            for region, text in zip(text_regions, texts):
-                region.text = text
-
-        # Optional captioning of visual regions.
-        if captioner is not None:
-            for region in regions:
-                if region.category in Category.visual() and region.crop_path:
-                    region.caption = captioner.caption(crop_region(page, region))
-
-        _write_regions_atomic(page_file, regions)
-        processed += 1
-        bar.set_postfix(ocr=processed, skip=skipped)
 
     if ocr_loaded:
         ocr.unload()

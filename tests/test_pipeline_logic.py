@@ -200,6 +200,86 @@ def test_streaming_defaults_to_false():
     assert IngestConfig().streaming is False
 
 
+def test_clamp_box_handles_out_of_bounds_and_degenerate():
+    """Boxes past the edge are clamped; zero-area or outside boxes return None."""
+    from publaynet_mmrag.preprocess.regions import _clamp_box
+    from publaynet_mmrag.types import BBox
+
+    assert _clamp_box(BBox.from_coco([90, 90, 50, 50]), 100, 100) == (90, 90, 100, 100)
+    assert _clamp_box(BBox.from_coco([200, 200, 10, 10]), 100, 100) is None
+    assert _clamp_box(BBox.from_coco([10, 10, 0, 5]), 100, 100) is None
+    assert _clamp_box(BBox.from_coco([10, 10, 20, 20]), 100, 100) == (10, 10, 30, 30)
+
+
+def test_silence_stderr_suppresses_and_restores():
+    """stderr is swapped inside the context and restored on exit."""
+    import sys
+
+    from publaynet_mmrag.quiet import silence_stderr
+
+    original = sys.stderr
+    with silence_stderr():
+        assert sys.stderr is not original
+        sys.stderr.write("this should be discarded")  # must not raise
+    assert sys.stderr is original
+
+
+def test_extract_regions_skips_tiny_visual_crops(tmp_path):
+    """A 1px-tall figure crop is skipped; a normal one is saved."""
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from publaynet_mmrag.preprocess.regions import extract_regions
+
+    page = SimpleNamespace(
+        image=Image.new("RGB", (100, 100), (255, 255, 255)),
+        doc_id="DOC",
+        page_index=0,
+        key="DOC_0",
+        annotations=[
+            {"category_id": 5, "bbox": [10, 10, 40, 40], "id": 1},  # normal figure
+            {"category_id": 5, "bbox": [10, 10, 40, 1], "id": 2},  # 1px tall -> skip
+        ],
+    )
+    regions = extract_regions(page, str(tmp_path))
+    by_id = {r.region_id.split(":")[-1]: r for r in regions}
+    assert by_id["1"].crop_path is not None
+    assert by_id["2"].crop_path is None
+
+
+def test_graceful_shutdown_runs_cleanup_and_exits():
+    """Ctrl-C runs the cleanup, exits 130, and restores the SIGTERM handler."""
+    import signal
+
+    import pytest
+
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
+    called = []
+    original = signal.getsignal(signal.SIGTERM)
+    with pytest.raises(SystemExit) as exc_info:
+        with graceful_shutdown(on_interrupt=lambda: called.append(True), message="x"):
+            raise KeyboardInterrupt
+    assert exc_info.value.code == 130
+    assert called == [True]
+    assert signal.getsignal(signal.SIGTERM) == original
+
+
+def test_graceful_shutdown_normal_path_skips_cleanup():
+    """On normal completion the cleanup does not run and the handler restores."""
+    import signal
+
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
+    called = []
+    original = signal.getsignal(signal.SIGTERM)
+    with graceful_shutdown(on_interrupt=lambda: called.append(True)):
+        pass
+    assert called == []
+    assert signal.getsignal(signal.SIGTERM) == original
+
+
 def test_retrieval_metrics_basic():
     """Recall, MRR and nDCG follow the gold rank as expected."""
     rank = rm.gold_rank(["a", "b", "c"], ["d1", "d2", "d3"], "b", "d2")

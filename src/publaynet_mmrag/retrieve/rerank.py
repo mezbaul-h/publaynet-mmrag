@@ -61,7 +61,10 @@ class Reranker:
         if not passages:
             return []
         pairs = [[query, passage] for passage in passages]
-        scores = self._model.compute_score(pairs, normalize=True)
+        from publaynet_mmrag.quiet import silence_stderr
+
+        with silence_stderr():
+            scores = self._model.compute_score(pairs, normalize=True)
         if isinstance(scores, float):
             return [scores]
         return [float(s) for s in scores]

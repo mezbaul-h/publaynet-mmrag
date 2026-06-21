@@ -92,13 +92,32 @@ def run(config: Config) -> None:
 
     from tqdm import tqdm
 
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
     checkpoint_every = config.kg.checkpoint_every
-    for i, chunk in enumerate(tqdm(pending, desc="Stage 3: KG", unit="chunk"), start=1):
-        entities = entity_extractor.extract(chunk.text)
-        triples = relation_extractor.extract(chunk.text) if relation_extractor else []
-        builder.add_chunk(chunk, entities, triples)
-        if checkpoint_every and i % checkpoint_every == 0:
-            builder.save(config.paths.kg_path)
+    relation_budget = config.kg.max_relation_chunks
+    relation_calls = 0
+
+    def _save_on_interrupt() -> None:
+        builder.save(config.paths.kg_path)
+        print(f"Saved graph progress to {config.paths.kg_path}; re-run to resume.")
+
+    with graceful_shutdown(
+        on_interrupt=_save_on_interrupt, message="Stage 3 interrupted; saving graph..."
+    ):
+        for i, chunk in enumerate(
+            tqdm(pending, desc="Stage 3: KG", unit="chunk"), start=1
+        ):
+            entities = entity_extractor.extract(chunk.text)
+            triples = []
+            if relation_extractor and (
+                relation_budget == 0 or relation_calls < relation_budget
+            ):
+                triples = relation_extractor.extract(chunk.text)
+                relation_calls += 1
+            builder.add_chunk(chunk, entities, triples)
+            if checkpoint_every and i % checkpoint_every == 0:
+                builder.save(config.paths.kg_path)
 
     entity_extractor.unload()
     if llm is not None:

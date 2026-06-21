@@ -194,7 +194,10 @@ def main() -> None:
     )
     args = parser.parse_args()
     variant_names = [v.strip() for v in args.variants.split(",") if v.strip()]
-    run(args.config, variant_names, use_judge=not args.no_judge)
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
+    with graceful_shutdown(message="Stage 4 interrupted."):
+        run(args.config, variant_names, use_judge=not args.no_judge)
 
 
 if __name__ == "__main__":

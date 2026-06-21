@@ -61,6 +61,10 @@ class ModelsConfig(BaseModel):
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     ner_model: str = "urchade/gliner_medium-v2.1"
     caption_model: str = "Qwen/Qwen3-VL-4B-Instruct"
+    # Surya OCR batch sizes. Lower values reduce peak VRAM on dense pages; these
+    # defaults target a 12 GiB card. Raise them if you have more headroom.
+    ocr_detector_batch_size: int = 6
+    ocr_recognition_batch_size: int = 32
     llm_model: str = "Qwen/Qwen3-4B-Instruct-2507"  # Hugging Face model id.
     llm_dtype: str = "float16"
     llm_load_in_4bit: bool = False  # Requires the optional 'quant' extra.
@@ -104,6 +108,9 @@ class KGConfig(BaseModel):
     )
     ner_threshold: float = 0.5
     use_llm_relations: bool = True
+    # Cap how many chunks get (slow) LLM relation extraction; 0 = all. Entities
+    # always run on every chunk. Use this to bound Stage 3 time at full scale.
+    max_relation_chunks: int = 0
     cooccurrence: bool = True
     checkpoint_every: int = 200  # Save the graph every N chunks (0 = only at end).
 

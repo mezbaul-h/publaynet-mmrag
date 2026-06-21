@@ -22,6 +22,7 @@ from publaynet_mmrag.config import Config  # noqa: E402
 from publaynet_mmrag.embed.image import ImageEmbedder  # noqa: E402
 from publaynet_mmrag.embed.text import TextEmbedder  # noqa: E402
 from publaynet_mmrag.index.store import VectorStore  # noqa: E402
+from publaynet_mmrag.preprocess.regions import MIN_CROP_PX as _MIN_IMG_PX  # noqa: E402
 from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Category, Chunk, Region, read_jsonl  # noqa: E402
 from scripts._common import add_config_args, resolve_config  # noqa: E402
@@ -110,15 +111,31 @@ def run(config: Config, with_image: bool) -> None:
             from tqdm import tqdm
 
             img_batch = 32
+            indexed = 0
             for start in tqdm(
                 range(0, len(regions), img_batch), desc="Stage 2: images", unit="batch"
             ):
                 part = regions[start : start + img_batch]
-                images = [Image.open(r.crop_path).convert("RGB") for r in part]
+                images = []
+                kept = []
+                for region in part:
+                    try:
+                        img = Image.open(region.crop_path).convert("RGB")
+                    except Exception:
+                        continue
+                    # Skip crops too small for the vision processor (degenerate
+                    # annotations); these would break SigLIP's preprocessing.
+                    if img.width < _MIN_IMG_PX or img.height < _MIN_IMG_PX:
+                        continue
+                    images.append(img)
+                    kept.append(region)
+                if not images:
+                    continue
                 vectors = image_embedder.embed_images(images)
-                store.upsert_images(part, vectors)
+                store.upsert_images(kept, vectors)
+                indexed += len(kept)
             image_embedder.unload()
-            print(f"Indexed {len(regions)} visual regions.")
+            print(f"Indexed {indexed} visual regions.")
         else:
             print("No new visual regions to index.")
 
@@ -135,7 +152,10 @@ def main() -> None:
         help="Skip indexing the visual modality.",
     )
     args = parser.parse_args()
-    run(resolve_config(args), with_image=not args.no_image)
+    from publaynet_mmrag.shutdown import graceful_shutdown
+
+    with graceful_shutdown(message="Stage 2 interrupted; re-run to resume."):
+        run(resolve_config(args), with_image=not args.no_image)
 
 
 if __name__ == "__main__":

@@ -31,15 +31,26 @@ class SuryaOcrEngine:
             caller's Stage 1 progress bar out of view.
     """
 
-    def __init__(self, device: str = "cuda", verbose: bool = False) -> None:
+    def __init__(
+        self,
+        device: str = "cuda",
+        verbose: bool = False,
+        detector_batch_size: int = 6,
+        recognition_batch_size: int = 32,
+    ) -> None:
         """Initialises the engine.
 
         Args:
             device: Torch device string (e.g. ``"cuda"`` or ``"cpu"``).
             verbose: Show Surya's per-page progress bars (off by default).
+            detector_batch_size: Surya detection batch size. Lower values cut
+                peak VRAM, which matters on a 12 GiB card with dense pages.
+            recognition_batch_size: Surya recognition batch size.
         """
         self.device = device
         self.verbose = verbose
+        self.detector_batch_size = detector_batch_size
+        self.recognition_batch_size = recognition_batch_size
         self._recognition: Any = None
         self._detection: Any = None
 
@@ -48,6 +59,15 @@ class SuryaOcrEngine:
         import os
 
         os.environ.setdefault("TORCH_DEVICE", self.device)
+        # Cap Surya's internal batch sizes to keep peak VRAM within a 12 GiB
+        # budget on dense pages, and reduce allocator fragmentation. All are
+        # Surya/torch settings read from the environment before CUDA init, so
+        # they must be set before importing surya / touching the GPU.
+        os.environ.setdefault("DETECTOR_BATCH_SIZE", str(self.detector_batch_size))
+        os.environ.setdefault(
+            "RECOGNITION_BATCH_SIZE", str(self.recognition_batch_size)
+        )
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         # Suppress Surya's internal tqdm bars (Surya-specific setting; read from
         # the environment at import time, so it must be set before importing
         # surya). This does not affect the caller's own tqdm progress bar.
@@ -76,6 +96,15 @@ class SuryaOcrEngine:
         for page in predictions:
             lines = [ln.text for ln in page.text_lines if ln.text.strip()]
             outputs.append("\n".join(lines).strip())
+        # Release per-page activations so fragmentation does not accumulate
+        # across thousands of pages.
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # pragma: no cover
+            pass
         return outputs
 
     def unload(self) -> None:
@@ -91,14 +120,26 @@ class SuryaOcrEngine:
             pass
 
 
-def build_ocr_engine(device: str = "cuda", verbose: bool = False) -> SuryaOcrEngine:
+def build_ocr_engine(
+    device: str = "cuda",
+    verbose: bool = False,
+    detector_batch_size: int = 6,
+    recognition_batch_size: int = 32,
+) -> SuryaOcrEngine:
     """Constructs the Surya OCR engine.
 
     Args:
         device: Torch device string for the predictors.
         verbose: Show Surya's per-page progress bars (off by default).
+        detector_batch_size: Surya detection batch size (lower = less VRAM).
+        recognition_batch_size: Surya recognition batch size.
 
     Returns:
         A configured :class:`SuryaOcrEngine`.
     """
-    return SuryaOcrEngine(device=device, verbose=verbose)
+    return SuryaOcrEngine(
+        device=device,
+        verbose=verbose,
+        detector_batch_size=detector_batch_size,
+        recognition_batch_size=recognition_batch_size,
+    )

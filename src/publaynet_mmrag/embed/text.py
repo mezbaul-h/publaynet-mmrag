@@ -86,13 +86,16 @@ class TextEmbedder:
         """
         if self._model is None:
             self.load()
-        output = self._model.encode(
-            texts,
-            batch_size=batch_size,
-            return_dense=True,
-            return_sparse=True,
-            return_colbert_vecs=False,
-        )
+        from publaynet_mmrag.quiet import silence_stderr
+
+        with silence_stderr():
+            output = self._model.encode(
+                texts,
+                batch_size=batch_size,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            )
         dense_vecs = output["dense_vecs"]
         lexical_weights = output["lexical_weights"]
 

@@ -190,6 +190,13 @@ every `kg.checkpoint_every` chunks. No flags are needed. Because "done" means
 "on disk", re-running a finished stage is a fast no-op; to rebuild a stage from
 scratch, delete its output (the region dir, the Qdrant dir, or the graph file).
 
+**If Stage 1 runs out of GPU memory** on a dense page, lower
+`models.ocr_detector_batch_size` (and `ocr_recognition_batch_size`) in
+`configs/base.yaml` -- they default to a 12 GiB budget. The engine also sets
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and clears the CUDA cache per
+page to limit fragmentation. Because Stage 1 is resumable, a re-run after an OOM
+continues from the page it stopped on rather than restarting.
+
 **Progress and downloads.** Model weights are fetched from the Hugging Face Hub
 on first use, lazily per stage, each with a download progress bar; they cache to
 `~/.cache/huggingface` so later runs are quiet. Every stage shows a `tqdm`
