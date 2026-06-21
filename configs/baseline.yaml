@@ -1,0 +1,12 @@
+# Baseline arm: text-only dense retrieval.
+# Every enhanced channel is disabled, so the only differences from the
+# enhanced arm are modality (visual) and structured knowledge (the graph),
+# plus the sparse and rerank ablation knobs.
+
+mode: baseline
+
+retrieval:
+  use_sparse: false
+  use_image: false
+  use_graph: false
+  use_rerank: false

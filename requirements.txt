@@ -1,0 +1,6 @@
+# pyproject.toml is the single source of truth for dependencies.
+# This installs the project and everything declared there; no versions are
+# duplicated here. Optional groups live in pyproject.toml, e.g.:
+#   pip install -e ".[all]"        # serve + demo + dev
+#   pip install -e ".[all,quant]"  # plus 4-bit (bitsandbytes)
+-e .

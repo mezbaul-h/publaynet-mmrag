@@ -1,0 +1,35 @@
+# Conda environment for publaynet-mmrag.
+#
+# Conda provides the Python interpreter and the environment boundary; the
+# project and all its dependencies are installed via pip from pyproject.toml,
+# because several of them (surya-ocr, FlagEmbedding, gliner, qdrant-client) are
+# published on PyPI only. pyproject.toml remains the single source of truth for
+# versions.
+#
+# Create and activate (run from the repository root, so `-e .` resolves):
+#   conda env create -f environment.yml
+#   conda activate publaynet-mmrag
+#
+# Optional extras: change the pip line to "-e .[all]" (serve + demo + dev) or
+# "-e .[all,quant]" for 4-bit, or run e.g. `pip install -e ".[serve]"` after.
+#
+# PyTorch / CUDA: by default pip installs a CUDA-bundled torch wheel on Linux.
+# If you would rather have conda manage a CUDA build, uncomment the pytorch /
+# pytorch-cuda lines and the pytorch / nvidia channels below, and set the CUDA
+# version to match your driver (see https://pytorch.org/get-started/locally/).
+# pip will then see torch already satisfied and not reinstall it.
+
+name: publaynet-mmrag
+
+channels:
+  # - pytorch       # uncomment to let conda manage CUDA-enabled PyTorch
+  # - nvidia
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pip>=24
+  # - pytorch>=2.2          # conda-managed torch (optional alternative)
+  # - pytorch-cuda=12.1     # match your driver; from the nvidia channel
+  - pip:
+      - -e .

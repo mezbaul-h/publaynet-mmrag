@@ -1,0 +1,7 @@
+# Ablation: baseline + cross-encoder reranking only.
+mode: abl_rerank
+retrieval:
+  use_sparse: false
+  use_image: false
+  use_graph: false
+  use_rerank: true

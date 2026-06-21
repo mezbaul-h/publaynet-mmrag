@@ -1,0 +1,7 @@
+# Ablation: baseline + knowledge-graph expansion only.
+mode: abl_graph
+retrieval:
+  use_sparse: false
+  use_image: false
+  use_graph: true
+  use_rerank: false

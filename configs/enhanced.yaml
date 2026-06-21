@@ -1,0 +1,10 @@
+# Enhanced arm: hybrid text retrieval + visual modality + knowledge graph
+# + cross-encoder reranking. Toggle individual flags to ablate each component.
+
+mode: enhanced
+
+retrieval:
+  use_sparse: true
+  use_image: true
+  use_graph: true
+  use_rerank: true

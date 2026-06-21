@@ -1,0 +1,7 @@
+# Ablation: baseline + dense/sparse hybrid text retrieval only.
+mode: abl_hybrid
+retrieval:
+  use_sparse: true
+  use_image: false
+  use_graph: false
+  use_rerank: false

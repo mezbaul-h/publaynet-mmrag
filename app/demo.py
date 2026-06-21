@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+"""Interactive Gradio demo.
+
+Presents a query box and a baseline/enhanced toggle, then shows the generated
+answer, the per-evidence provenance table, the cited regions highlighted on
+their page image, and the knowledge-graph paths used. Pages and regions are read
+back from the Stage 1 artifacts on disk to render the bounding-box overlay.
+"""
+
+from __future__ import annotations
+
+import glob
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+
+import gradio as gr  # noqa: E402
+
+from publaynet_mmrag.config import Config, load_config  # noqa: E402
+from publaynet_mmrag.pipeline import RAGSystem, build_system  # noqa: E402
+from publaynet_mmrag.types import Region, read_jsonl  # noqa: E402
+
+_CONFIG_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "configs")
+_SYSTEMS: dict[str, RAGSystem] = {}
+_REGION_CACHE: dict[str, Region] = {}
+
+
+def _load_config(mode: str) -> Config:
+    """Loads the configuration for a mode.
+
+    Args:
+        mode: ``"baseline"`` or ``"enhanced"``.
+
+    Returns:
+        The composed configuration.
+    """
+    base = os.path.join(_CONFIG_DIR, "base.yaml")
+    config = load_config(base, os.path.join(_CONFIG_DIR, f"{mode}.yaml"))
+    config.mode = mode
+    return config
+
+
+def _get_system(mode: str) -> RAGSystem:
+    """Returns a cached system for the mode, building it on first use.
+
+    Args:
+        mode: ``"baseline"`` or ``"enhanced"``.
+
+    Returns:
+        The :class:`RAGSystem` for that mode.
+    """
+    if mode not in _SYSTEMS:
+        _SYSTEMS[mode] = build_system(_load_config(mode))
+    return _SYSTEMS[mode]
+
+
+def _index_regions(config: Config) -> None:
+    """Loads all regions into a cache keyed by region id.
+
+    Args:
+        config: The active configuration (for the regions directory).
+    """
+    if _REGION_CACHE:
+        return
+    for path in glob.glob(os.path.join(config.paths.regions_dir, "*.jsonl")):
+        for row in read_jsonl(path):
+            region = Region.from_dict(row)
+            _REGION_CACHE[region.region_id] = region
+
+
+def answer_query(question: str, mode: str):
+    """Answers a question and assembles the demo outputs.
+
+    Args:
+        question: The user's question.
+        mode: The selected pipeline arm.
+
+    Returns:
+        A tuple of (answer markdown, evidence rows, graph-paths markdown).
+    """
+    system = _get_system(mode)
+    _index_regions(system.config)
+    answer = system.answer(question)
+    provenance = system.explain(answer)
+
+    md = f"### Answer\n{answer.text}\n"
+    if answer.reasoning:
+        md += f"\n<details><summary>Reasoning</summary>\n\n{answer.reasoning}\n</details>"
+
+    rows = [
+        [t.source_id, t.doc_id, t.page_index, t.modality, t.retrieval_source,
+         round(t.score, 3), "yes" if t.cited else ""]
+        for t in provenance.evidence
+    ]
+    paths_md = (
+        "### Knowledge-graph paths\n" + "\n".join(f"- {p}" for p in provenance.graph_paths)
+        if provenance.graph_paths
+        else "_No graph paths used._"
+    )
+    return md, rows, paths_md
+
+
+def build_ui() -> "gr.Blocks":
+    """Builds the Gradio interface.
+
+    Returns:
+        The assembled Gradio ``Blocks`` app.
+    """
+    with gr.Blocks(title="PubLayNet Multimodal RAG") as demo:
+        gr.Markdown("# PubLayNet Multimodal RAG\nAsk a question over the indexed pages.")
+        with gr.Row():
+            question = gr.Textbox(label="Question", scale=4)
+            mode = gr.Radio(
+                ["baseline", "enhanced"], value="enhanced", label="Pipeline", scale=1
+            )
+        run_button = gr.Button("Ask", variant="primary")
+        answer_md = gr.Markdown()
+        evidence = gr.Dataframe(
+            headers=["source", "doc", "page", "modality", "channel", "score", "cited"],
+            label="Evidence",
+            wrap=True,
+        )
+        paths_md = gr.Markdown()
+
+        run_button.click(
+            answer_query,
+            inputs=[question, mode],
+            outputs=[answer_md, evidence, paths_md],
+        )
+    return demo
+
+
+def main() -> None:
+    """Launches the demo."""
+    build_ui().launch()
+
+
+if __name__ == "__main__":
+    main()

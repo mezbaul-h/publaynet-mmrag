@@ -1,0 +1,60 @@
+[project]
+name = "publaynet-mmrag"
+version = "0.1.0"
+description = "Multimodal RAG + knowledge graph over PubLayNet, with a text-only baseline for comparison."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # Core data / config.
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "pillow>=10.2",
+    "networkx>=3.2",
+    "tqdm>=4.66",
+    # Ingestion (the HF 'webdataset' loader reads the subset shards).
+    "datasets>=2.18",
+    # OCR (Surya v1.x predictor API; v0.20+ changed the API, see README).
+    "surya-ocr>=0.13,<0.20",
+    # Embeddings / reranking.
+    "FlagEmbedding>=1.2.10",
+    # In-process generation, vision and NER backbone.
+    # Qwen3 LLM requires transformers>=4.51; the optional Qwen3-VL captioner
+    # wants a recent release, so prefer the latest if captioning is used.
+    "transformers>=4.51",
+    "torch>=2.2",
+    "accelerate>=0.30",
+    # Knowledge-graph entities.
+    "gliner>=0.2.13",
+    # Vector store (>=1.10 for query_points + FusionQuery RRF), embedded/on-disk.
+    "qdrant-client>=1.10",
+    # Visualisation.
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# 4-bit quantisation, e.g. to run a 7B generator on a 12 GiB GPU.
+# Kept out of 'all' because bitsandbytes is CUDA-version-sensitive.
+quant = ["bitsandbytes>=0.43"]
+# HTTP serving (Stage 5).
+serve = ["fastapi>=0.110", "uvicorn>=0.29"]
+# Interactive demo.
+demo = ["gradio>=4.40"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+# Everything except quant; install quant separately if you need 4-bit.
+all = ["publaynet-mmrag[serve,demo,dev]"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/publaynet_mmrag"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"

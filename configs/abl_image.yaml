@@ -1,0 +1,7 @@
+# Ablation: baseline + visual (SigLIP2 figure/table) retrieval only.
+mode: abl_image
+retrieval:
+  use_sparse: false
+  use_image: true
+  use_graph: false
+  use_rerank: false
