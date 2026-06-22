@@ -45,6 +45,19 @@ from publaynet_mmrag.types import Chunk, read_jsonl, write_jsonl  # noqa: E402
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "configs")
 
 
+def _variant_cache_path(ref, name: str) -> str:
+    """Returns the per-variant result cache path.
+
+    Args:
+        ref: The reference config (for the results directory).
+        name: Variant name.
+
+    Returns:
+        Path to the variant's cached metrics JSON.
+    """
+    return os.path.join(ref.paths.results_dir, f"_variant_{name}.json")
+
+
 def _ensure_qa(config: Config, llm: LocalLLM) -> list[dict]:
     """Loads the QA set, synthesising it on first use.
 
@@ -134,37 +147,60 @@ def run(base_path: str, variant_names: list[str], use_judge: bool) -> None:
     # A reference config (any variant) supplies shared eval/model/path settings.
     ref = load_config(base_path, os.path.join(_CONFIG_DIR, "enhanced.yaml"))
     use_judge = use_judge and ref.eval.use_llm_judge
+    os.makedirs(ref.paths.results_dir, exist_ok=True)
 
     import time
 
     start = time.perf_counter()
 
-    llm = build_llm(ref)
-    qa = _ensure_qa(ref, llm)
-    print(f"Evaluating {len(variant_names)} variant(s) on {len(qa)} questions.")
-
+    # Load any already-completed variants and decide what is left to run, so a
+    # re-run after a crash/interrupt skips variants already finished. To force a
+    # fresh evaluation, delete the _variant_*.json files (or the results dir).
     results: dict[str, dict] = {}
-    for name in tqdm(variant_names, desc="variants", unit="cfg"):
-        variant_path = os.path.join(_CONFIG_DIR, f"{name}.yaml")
-        cfg = load_config(base_path, variant_path)
-        cfg.mode = name
-        results[name] = _evaluate_variant(
-            cfg, qa, llm, use_judge, ref.eval.judge_sample_size, name
-        )
+    todo: list[str] = []
+    for name in variant_names:
+        cache_path = _variant_cache_path(ref, name)
+        if os.path.exists(cache_path):
+            with open(cache_path, encoding="utf-8") as handle:
+                results[name] = json.load(handle)
+        else:
+            todo.append(name)
 
-    report: dict = {"num_questions": len(qa), "variants": results}
-    if "baseline" in results:
-        base_m = results["baseline"]
+    if todo:
+        llm = build_llm(ref)
+        qa = _ensure_qa(ref, llm)
+        cached = len(results)
+        note = f" ({cached} cached)" if cached else ""
+        print(f"Evaluating {len(todo)} variant(s) on {len(qa)} questions{note}.")
+        for name in tqdm(todo, desc="variants", unit="cfg"):
+            variant_path = os.path.join(_CONFIG_DIR, f"{name}.yaml")
+            cfg = load_config(base_path, variant_path)
+            cfg.mode = name
+            metrics = _evaluate_variant(
+                cfg, qa, llm, use_judge, ref.eval.judge_sample_size, name
+            )
+            results[name] = metrics
+            with open(_variant_cache_path(ref, name), "w", encoding="utf-8") as handle:
+                json.dump(metrics, handle, indent=2)
+    else:
+        print("All requested variants already cached; assembling report.")
+
+    num_questions = (
+        len(read_jsonl(ref.paths.qa_path)) if os.path.exists(ref.paths.qa_path) else 0
+    )
+    ordered = {name: results[name] for name in variant_names if name in results}
+    report: dict = {"num_questions": num_questions, "variants": ordered}
+    if "baseline" in ordered:
+        base_m = ordered["baseline"]
         report["delta_vs_baseline"] = {
             name: {
-                k: round(results[name][k] - base_m.get(k, 0.0), 4)
-                for k in results[name]
+                k: round(ordered[name][k] - base_m.get(k, 0.0), 4)
+                for k in ordered[name]
             }
-            for name in results
+            for name in ordered
             if name != "baseline"
         }
 
-    os.makedirs(ref.paths.results_dir, exist_ok=True)
     out_path = os.path.join(ref.paths.results_dir, "comparison.json")
     with open(out_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)

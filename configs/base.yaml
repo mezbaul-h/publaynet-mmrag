@@ -31,6 +31,9 @@ ingest:
 models:
   device: cuda                 # Index/build stages (throughput-bound).
   retrieval_device: cpu        # Serve-time query models, to spare VRAM.
+  rerank_device: cuda            # "" = use retrieval_device. Set to cuda to run
+                               # only the reranker on GPU (big Stage 4 speed-up;
+                               # ~1 GB on top of the ~8 GB LLM, fits 12 GiB).
   text_embed_model: BAAI/bge-m3
   text_embed_dim: 1024
   image_embed_model: google/siglip2-base-patch16-224

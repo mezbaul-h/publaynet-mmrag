@@ -181,14 +181,18 @@ LLM judge scores (each costs two extra LLM calls; `0` = all); `--no-judge` (or
 `eval.use_llm_judge: false`) skips generation metrics entirely, which makes
 ablation sweeps many times faster.
 
-**Resumability.** Stages 1-3 resume automatically: re-run the same command and
+**Resumability.** Stages 1-4 resume automatically: re-run the same command and
 each detects completed work on disk and skips it, so a crash mid-run is not
 fatal. Stage 1 writes one region file per page and skips pages whose file
 exists; Stage 2 skips chunks/regions already in the index (stable point ids);
 Stage 3 loads the existing graph, skips chunks already in it, and checkpoints
-every `kg.checkpoint_every` chunks. No flags are needed. Because "done" means
-"on disk", re-running a finished stage is a fast no-op; to rebuild a stage from
-scratch, delete its output (the region dir, the Qdrant dir, or the graph file).
+every `kg.checkpoint_every` chunks; Stage 4 caches each completed variant
+(`results/_variant_<name>.json`) and skips it on re-run. No flags are needed.
+Ctrl-C and `kill` (SIGTERM) shut down gracefully -- progress is saved and a
+short message printed instead of a traceback. Because "done" means "on disk",
+re-running a finished stage is a fast no-op; to rebuild a stage from scratch,
+delete its output (the region dir, the Qdrant dir, the graph file, or the
+per-variant result files).
 
 **If Stage 1 runs out of GPU memory** on a dense page, lower
 `models.ocr_detector_batch_size` (and `ocr_recognition_batch_size`) in

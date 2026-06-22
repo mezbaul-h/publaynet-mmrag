@@ -37,6 +37,7 @@ class ImageEmbedder:
         self.device = device
         self._model: Any = None
         self._processor: Any = None
+        self._max_text_len = 64  # SigLIP text tower limit; refined at load().
 
     def load(self) -> None:
         """Loads the SigLIP2 model and processor onto the device."""
@@ -50,6 +51,8 @@ class ImageEmbedder:
             .eval()
         )
         self._processor = AutoProcessor.from_pretrained(self.model_name)
+        text_config = getattr(self._model.config, "text_config", None)
+        self._max_text_len = getattr(text_config, "max_position_embeddings", 64)
 
     def embed_images(
         self, images: list["PILImage"], batch_size: int = 16
@@ -94,6 +97,7 @@ class ImageEmbedder:
             text=texts,
             padding="max_length",
             truncation=True,
+            max_length=self._max_text_len,
             return_tensors="pt",
         ).to(self.device)
         with torch.no_grad():

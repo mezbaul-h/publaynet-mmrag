@@ -54,6 +54,11 @@ class ModelsConfig(BaseModel):
 
     device: str = "cuda"  # Index/build stages (throughput-bound).
     retrieval_device: str = "cpu"  # Serve-time query models, to spare VRAM.
+    # Device for the cross-encoder reranker specifically; "" falls back to
+    # retrieval_device. The reranker scores many candidates per query, so on a
+    # GPU with spare VRAM (LLM ~8 GB + reranker ~1 GB) setting this to "cuda"
+    # speeds up the enhanced arm dramatically without moving the embedders.
+    rerank_device: str = ""
     text_embed_model: str = "BAAI/bge-m3"
     text_embed_dim: int = 1024
     image_embed_model: str = "google/siglip2-base-patch16-224"

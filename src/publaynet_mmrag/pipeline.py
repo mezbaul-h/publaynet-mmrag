@@ -127,8 +127,9 @@ def build_system(config: Config, llm: Optional[LocalLLM] = None) -> RAGSystem:
 
     reranker = None
     if config.retrieval.use_rerank:
+        rerank_device = config.models.rerank_device or retrieval_device
         reranker = Reranker(
-            model_name=config.models.reranker_model, device=retrieval_device
+            model_name=config.models.reranker_model, device=rerank_device
         )
         reranker.load()
 
