@@ -17,14 +17,23 @@ def _rank_of_gold(
     gold_id: str,
     retrieved_docs: Optional[list[str]] = None,
     gold_doc: Optional[str] = None,
+    allow_doc_fallback: bool = True,
 ) -> Optional[int]:
     """Finds the 1-based rank of the gold target in a result list.
 
+    The document-level fallback (a sibling of the gold from the same document
+    counts) is appropriate for general text QA, where neighbouring chunks usually
+    share the answer, but not for the visual or multihop splits: there the gold
+    is a *specific* figure or bridge chunk, and retrieving an unrelated same-doc
+    chunk is not an answer. Callers disable the fallback for those splits so the
+    metric reflects exact-item retrieval.
+
     Args:
-        retrieved_ids: Retrieved chunk ids in rank order.
-        gold_id: The gold chunk id.
+        retrieved_ids: Retrieved chunk/region ids in rank order.
+        gold_id: The gold chunk or region id.
         retrieved_docs: Retrieved document ids in rank order (doc fallback).
         gold_doc: The gold document id (doc fallback).
+        allow_doc_fallback: Whether to allow the document-level fallback match.
 
     Returns:
         The 1-based rank of the first match, or ``None`` if absent.
@@ -32,7 +41,7 @@ def _rank_of_gold(
     for i, rid in enumerate(retrieved_ids):
         if rid == gold_id:
             return i + 1
-    if retrieved_docs and gold_doc:
+    if allow_doc_fallback and retrieved_docs and gold_doc:
         for i, did in enumerate(retrieved_docs):
             if did == gold_doc:
                 return i + 1
@@ -108,16 +117,21 @@ def gold_rank(
     retrieved_docs: list[str],
     gold_id: str,
     gold_doc: str,
+    allow_doc_fallback: bool = True,
 ) -> Optional[int]:
     """Convenience wrapper returning the gold rank for one query.
 
     Args:
-        retrieved_ids: Retrieved chunk ids in rank order.
+        retrieved_ids: Retrieved chunk/region ids in rank order.
         retrieved_docs: Retrieved document ids in rank order.
-        gold_id: The gold chunk id.
+        gold_id: The gold chunk or region id.
         gold_doc: The gold document id.
+        allow_doc_fallback: Whether a same-document match counts (text split
+            only; off for the visual and multihop splits).
 
     Returns:
         The 1-based gold rank, or ``None`` if not retrieved.
     """
-    return _rank_of_gold(retrieved_ids, gold_id, retrieved_docs, gold_doc)
+    return _rank_of_gold(
+        retrieved_ids, gold_id, retrieved_docs, gold_doc, allow_doc_fallback
+    )

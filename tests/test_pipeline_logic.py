@@ -295,11 +295,208 @@ def test_retrieval_metrics_doc_fallback():
     assert rank == 2
 
 
+def test_retrieval_metrics_doc_fallback_disabled():
+    """With the fallback off, only an exact id match counts (visual/multihop)."""
+    # Same-document sibling no longer rescues a missed exact id.
+    assert (
+        rm.gold_rank(
+            ["x", "y"], ["d9", "dgold"], "missing", "dgold", allow_doc_fallback=False
+        )
+        is None
+    )
+    # An exact id match still counts regardless of the flag.
+    assert (
+        rm.gold_rank(
+            ["x", "GOLD"], ["d9", "dgold"], "GOLD", "dgold", allow_doc_fallback=False
+        )
+        == 2
+    )
+
+
 def test_retrieval_aggregate_means():
     """Aggregation averages per-query metrics across the set."""
     metrics = rm.aggregate([1, None, 2], ks=[1, 3])
     assert 0.0 <= metrics["mrr"] <= 1.0
     assert abs(metrics["recall@3"] - 2 / 3) < 1e-9
+
+
+def _item(modality: str, ident: str, score: float = 0.0):
+    """Builds a RetrievedItem for fusion tests."""
+    from publaynet_mmrag.types import RetrievedItem
+
+    kwargs = {"chunk_id": ident} if modality == "text" else {"region_id": ident}
+    return RetrievedItem(
+        doc_id="d", page_index=0, score=score, modality=modality, **kwargs
+    )
+
+
+def test_fuse_channels_single_channel_preserves_order():
+    """One channel fuses to its own rank order (the baseline arm)."""
+    from publaynet_mmrag.retrieve.multimodal_rag import fuse_channels
+
+    text = [_item("text", f"c{i}") for i in range(4)]
+    fused = fuse_channels([(1.0, text)], rrf_k=60)
+    assert [it.chunk_id for it in fused] == ["c0", "c1", "c2", "c3"]
+
+
+def test_fuse_channels_surfaces_image_into_topk():
+    """With equal weights a top image hit interleaves into the top-k.
+
+    This is the fix for the inert image channel: under the old raw-score merge a
+    figure (small SigLIP cosine) sank below every text hit; RRF by rank lets it
+    reach the top few.
+    """
+    from publaynet_mmrag.retrieve.multimodal_rag import fuse_channels
+
+    text = [_item("text", f"c{i}") for i in range(5)]
+    image = [_item("image", "GOLD"), _item("image", "r2")]
+    fused = fuse_channels([(1.0, text), (1.0, image)], rrf_k=60)
+    order = [it.chunk_id or it.region_id for it in fused]
+    assert order.index("GOLD") < 5  # reaches the top-5 output cut
+
+
+def test_fuse_channels_cross_channel_agreement_boosts():
+    """An item returned by two channels outranks single-channel items."""
+    from publaynet_mmrag.retrieve.multimodal_rag import fuse_channels
+
+    text = [_item("text", "shared"), _item("text", "t1")]
+    graph = [_item("text", "shared"), _item("text", "g1")]
+    fused = fuse_channels([(1.0, text), (1.0, graph)], rrf_k=60)
+    assert fused[0].chunk_id == "shared"
+
+
+def _mini_graph():
+    """A tiny graph: A & B co-occur in chunk C1; B alone in C2 (the bridge)."""
+    builder = KnowledgeGraphBuilder(cooccurrence=True)
+    long = " filler clause for length." * 12
+    c1 = Chunk("D1:0:c0", "D1", 0, "alpha method and beta result." + long, ["r"])
+    c2 = Chunk("D2:0:c0", "D2", 0, "beta result and gamma findings." + long, ["r"])
+    builder.add_chunk(
+        c1,
+        [Entity("alpha method", "method", 0.9), Entity("beta result", "result", 0.9)],
+    )
+    builder.add_chunk(
+        c2,
+        [Entity("beta result", "result", 0.9), Entity("gamma signal", "task", 0.9)],
+    )
+    return builder.graph, {c1.chunk_id: c1, c2.chunk_id: c2}
+
+
+def test_match_entities_respects_word_boundaries_and_length():
+    """Whole-word matching only; sub-minimum names are ignored."""
+    from publaynet_mmrag.kg import query as kg_query
+
+    graph, _ = _mini_graph()
+    # 'alpha method' is a whole-word hit; matching is case-insensitive.
+    hit = kg_query._match_entities(graph, "What does Alpha Method achieve?")
+    names = {graph.nodes[n].get("name").lower() for n in hit}
+    assert "alpha method" in names
+    # No spurious match when the surface form only appears inside a longer word.
+    assert kg_query._match_entities(graph, "the alphamethodology was used") == []
+
+
+def test_expand_ranks_bridge_chunk_first_by_proximity():
+    """Graph expansion surfaces the bridge chunk and ranks by proximity."""
+    from publaynet_mmrag.kg import query as kg_query
+
+    graph, _ = _mini_graph()
+    exp = kg_query.expand(graph, "What does alpha method achieve?", hops=1)
+    assert "D2:0:c0" in exp.chunk_ids  # the bridge (mentions B, not A) is reached
+    # The chunk mentioning the anchor directly outranks the one-hop bridge.
+    assert exp.chunk_ids.index("D1:0:c0") < exp.chunk_ids.index("D2:0:c0")
+
+
+def test_multihop_candidates_yield_dense_hard_bridge():
+    """A candidate's bridge mentions B but not the anchor A (dense-hard)."""
+    import random
+
+    from publaynet_mmrag.eval.build_qa import _multihop_candidates
+
+    graph, lookup = _mini_graph()
+    cands = list(_multihop_candidates(graph, lookup, random.Random(0)))
+    assert cands, "expected at least one candidate"
+    cand = cands[0]
+    assert cand["a"] == "alpha method"
+    assert cand["b"] == "beta result"
+    assert cand["chunk"].chunk_id == "D2:0:c0"
+    # A is genuinely absent from the bridge graph node (no MENTIONS edge).
+    a_node = "entity::method::alpha method"
+    assert not graph.has_edge("D2:0:c0", a_node)
+
+
+def test_normalise_row_upgrades_legacy_qa():
+    """A legacy QA row (only gold_chunk_id) becomes a typed text row."""
+    from publaynet_mmrag.eval.build_qa import normalise_row
+
+    row = normalise_row({"question": "q", "gold_chunk_id": "c1", "gold_doc_id": "d"})
+    assert row["qtype"] == "text"
+    assert row["gold_id"] == "c1"
+    assert row["gold_kind"] == "chunk"
+
+
+def test_aggregate_scores_ignores_unscorable():
+    """Per-sample judge scores mean correctly and skip None entries."""
+    from publaynet_mmrag.eval.rag_metrics import aggregate_scores
+
+    scored = [
+        {"faithfulness": 1.0, "answer_relevancy": 0.5},
+        {"faithfulness": None, "answer_relevancy": 1.0},
+    ]
+    out = aggregate_scores(scored)
+    assert out["faithfulness"] == 1.0  # the None is skipped
+    assert abs(out["answer_relevancy"] - 0.75) < 1e-9
+
+
+def test_vision_generator_attaches_crops_and_parses_citations(tmp_path):
+    """The vision generator attaches image-evidence crops and resolves citations."""
+    from PIL import Image
+
+    from publaynet_mmrag.config import GenerationConfig
+    from publaynet_mmrag.reason.generate import VisionGenerator
+    from publaynet_mmrag.types import RetrievedItem
+
+    crop = tmp_path / "fig.png"
+    Image.new("RGB", (8, 8), (255, 255, 255)).save(crop)
+
+    captured = {}
+
+    class _StubVLM:
+        def generate(self, system_prompt, user_text, images, temperature):
+            captured["n_images"] = len(images)
+            captured["user_text"] = user_text
+            return "Reasoning: looked at the figure.\nAnswer: 4900 MFI. [S1]"
+
+    items = [
+        RetrievedItem(
+            doc_id="D",
+            page_index=2,
+            score=1.0,
+            modality="image",
+            text="[table region]",
+            region_id="D:2:r1",
+            crop_path=str(crop),
+            source="image",
+        ),
+        RetrievedItem(
+            doc_id="D",
+            page_index=2,
+            score=0.9,
+            modality="text",
+            text="some context",
+            chunk_id="D:2:c0",
+            source="text_dense",
+        ),
+    ]
+    gen = VisionGenerator(_StubVLM(), GenerationConfig())
+    answer = gen.generate("What is the max MFI?", items, [])
+
+    assert captured["n_images"] == 1  # the figure crop was attached
+    assert "attached images" in captured["user_text"]  # vision note prepended
+    # The (possibly wrong) caption is blanked so the VLM reads the image instead.
+    assert "[table region]" not in captured["user_text"]
+    assert "see attached image" in captured["user_text"]
+    assert answer.text == "4900 MFI. [S1]"
+    assert answer.citations == ["D:2:r1"]  # [S1] maps back to the image region
 
 
 def test_kg_build_and_roundtrip():

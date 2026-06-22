@@ -112,6 +112,12 @@ def main() -> None:
     parser.add_argument("--mode", choices=["baseline", "enhanced"], default="enhanced")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--text-generation",
+        action="store_true",
+        help="Answer with the text LLM reading captions instead of a VLM reading "
+        "the retrieved figure/table crops (vision generation is the default).",
+    )
     args = parser.parse_args()
     if not args.config:
         args.config = os.path.join(
@@ -122,7 +128,10 @@ def main() -> None:
     import time
 
     start = time.perf_counter()
-    _system = build_system(resolve_config(args))
+    config = resolve_config(args)
+    # Read figures/tables from pixels (true visual QA) unless explicitly disabled.
+    config.generation.vision_generation = not args.text_generation
+    _system = build_system(config)
     print(
         f"System ready in {format_duration(time.perf_counter() - start)}; "
         f"serving on http://{args.host}:{args.port}"

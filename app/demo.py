@@ -2,9 +2,10 @@
 """Interactive Gradio demo.
 
 Presents a query box and a baseline/enhanced toggle, then shows the generated
-answer, the per-evidence provenance table, the cited regions highlighted on
-their page image, and the knowledge-graph paths used. Pages and regions are read
-back from the Stage 1 artifacts on disk to render the bounding-box overlay.
+answer, the per-evidence provenance table, a gallery of the retrieved
+figure/table crops (cited ones flagged, with their captions), and the
+knowledge-graph paths used. Crops are read back from the Stage 1 artifacts on
+disk (``region.crop_path``).
 """
 
 from __future__ import annotations
@@ -40,9 +41,27 @@ from publaynet_mmrag.pipeline import RAGSystem, build_system  # noqa: E402
 from publaynet_mmrag.timing import format_duration  # noqa: E402
 from publaynet_mmrag.types import Region, read_jsonl  # noqa: E402
 
-_CONFIG_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "configs")
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+_CONFIG_DIR = os.path.join(_REPO_ROOT, "configs")
 _SYSTEMS: dict[str, RAGSystem] = {}
 _REGION_CACHE: dict[str, Region] = {}
+
+
+def _resolve_crop(crop_path: str) -> str | None:
+    """Resolves a stored (possibly repo-relative) crop path to an existing file.
+
+    Args:
+        crop_path: The ``region.crop_path`` recorded at ingest time.
+
+    Returns:
+        An absolute path to the crop if it exists, else ``None``.
+    """
+    if not crop_path:
+        return None
+    candidate = (
+        crop_path if os.path.isabs(crop_path) else os.path.join(_REPO_ROOT, crop_path)
+    )
+    return candidate if os.path.exists(candidate) else None
 
 
 def _load_config(mode: str) -> Config:
@@ -57,6 +76,9 @@ def _load_config(mode: str) -> Config:
     base = os.path.join(_CONFIG_DIR, "base.yaml")
     config = load_config(base, os.path.join(_CONFIG_DIR, f"{mode}.yaml"))
     config.mode = mode
+    # Answer with a VLM that reads the retrieved figure/table crops, so visual
+    # questions are answered from the image rather than a lossy caption.
+    config.generation.vision_generation = True
     return config
 
 
@@ -96,7 +118,9 @@ def answer_query(question: str, mode: str):
         mode: The selected pipeline arm.
 
     Returns:
-        A tuple of (answer markdown, evidence rows, graph-paths markdown).
+        A tuple of (answer markdown, evidence rows, figure gallery, graph-paths
+        markdown). The gallery holds ``(crop_path, caption)`` pairs for the
+        retrieved figure/table regions.
     """
     import time
 
@@ -127,13 +151,28 @@ def answer_query(question: str, mode: str):
         ]
         for t in provenance.evidence
     ]
+
+    # Gallery of retrieved figure/table crops; cited ones are flagged first.
+    gallery: list[tuple[str, str]] = []
+    for t in provenance.evidence:
+        if t.modality != "image":
+            continue
+        crop = _resolve_crop(t.crop_path)
+        if not crop:
+            continue
+        caption = (t.text or "").strip() or "(no caption)"
+        flag = "★ CITED — " if t.cited else ""
+        label = f"{flag}{t.doc_id} p{t.page_index} · {caption}"
+        gallery.append((crop, label[:200]))
+    gallery.sort(key=lambda item: not item[1].startswith("★"))
+
     paths_md = (
         "### Knowledge-graph paths\n"
         + "\n".join(f"- {p}" for p in provenance.graph_paths)
         if provenance.graph_paths
         else "_No graph paths used._"
     )
-    return md, rows, paths_md
+    return md, rows, gallery, paths_md
 
 
 def build_ui() -> "gr.Blocks":
@@ -158,12 +197,18 @@ def build_ui() -> "gr.Blocks":
             label="Evidence",
             wrap=True,
         )
+        figures = gr.Gallery(
+            label="Retrieved figures / tables (★ = cited)",
+            columns=3,
+            height="auto",
+            object_fit="contain",
+        )
         paths_md = gr.Markdown()
 
         run_button.click(
             answer_query,
             inputs=[question, mode],
-            outputs=[answer_md, evidence, paths_md],
+            outputs=[answer_md, evidence, figures, paths_md],
         )
     return demo
 

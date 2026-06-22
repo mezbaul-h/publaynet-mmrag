@@ -65,7 +65,7 @@ class ModelsConfig(BaseModel):
     image_embed_dim: int = 768
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     ner_model: str = "urchade/gliner_medium-v2.1"
-    caption_model: str = "Qwen/Qwen3-VL-4B-Instruct"
+    caption_model: str = "Qwen/Qwen2.5-VL-3B-Instruct"
     # Surya OCR batch sizes. Lower values reduce peak VRAM on dense pages; these
     # defaults target a 12 GiB card. Raise them if you have more headroom.
     ocr_detector_batch_size: int = 6
@@ -94,7 +94,14 @@ class RetrievalConfig(BaseModel):
     use_graph: bool = False
     use_rerank: bool = False
     graph_hops: int = 1
-    image_weight: float = 0.5
+    # Reciprocal Rank Fusion: channels are fused by rank, not by raw score, so
+    # the text/image/graph channels (whose raw scores are on incomparable
+    # scales) can each influence the final ranking. Per-channel weights tilt the
+    # fusion; rrf_k is the standard RRF damping constant.
+    rrf_k: int = 60
+    text_weight: float = 1.0
+    image_weight: float = 1.0
+    graph_weight: float = 1.0
 
 
 class KGConfig(BaseModel):
@@ -127,15 +134,27 @@ class GenerationConfig(BaseModel):
     max_context_items: int = 6
     chain_of_thought: bool = True
     num_ctx: int = 8192
+    # Generate with a vision-language model that sees the retrieved figure/table
+    # crops (true visual QA) instead of the text LLM reading their captions. Used
+    # for serving/the demo; left off for the evaluation, where the text generator
+    # keeps the reported numbers comparable and avoids loading both models.
+    vision_generation: bool = False
 
 
 class EvalConfig(BaseModel):
     """Evaluation harness settings."""
 
     num_questions: int = 300
+    # Segmented evaluation: the text split measures text retrieval, the visual
+    # split (gold = a figure/table region) measures image retrieval, and the
+    # multihop split (gold = a KG-bridge chunk dense ranks poorly) measures graph
+    # retrieval. Each isolates one enhanced channel's contribution.
+    num_visual_questions: int = 100
+    num_multihop_questions: int = 100
+    caption_sample_size: int = 500  # Visual regions captioned for the visual split.
     ks: list[int] = Field(default_factory=lambda: [1, 3, 5, 10])
     use_llm_judge: bool = True
-    judge_sample_size: int = 150  # LLM-judge only this many; 0 = all questions.
+    judge_sample_size: int = 50  # LLM-judge up to this many answers *per split*.
     seed: int = 42
 
 

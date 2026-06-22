@@ -25,8 +25,9 @@ from publaynet_mmrag.embed.text import TextEmbedder
 from publaynet_mmrag.explain.provenance import Provenance, build_provenance
 from publaynet_mmrag.index.store import VectorStore
 from publaynet_mmrag.kg.build import load_graph
-from publaynet_mmrag.reason.generate import Generator
+from publaynet_mmrag.reason.generate import Generator, VisionGenerator
 from publaynet_mmrag.reason.llm import LocalLLM
+from publaynet_mmrag.reason.vision_llm import VisionLLM
 from publaynet_mmrag.retrieve.multimodal_rag import Retriever
 from publaynet_mmrag.retrieve.rerank import Reranker
 from publaynet_mmrag.types import Answer
@@ -45,8 +46,8 @@ class RAGSystem:
 
     config: Config
     retriever: Retriever
-    generator: Generator
-    llm: LocalLLM
+    generator: Generator | VisionGenerator
+    llm: LocalLLM | VisionLLM
 
     def answer(self, question: str) -> Answer:
         """Answers a question end to end.
@@ -145,6 +146,24 @@ def build_system(config: Config, llm: Optional[LocalLLM] = None) -> RAGSystem:
         reranker=reranker,
         graph=graph,
     )
+
+    # Vision generation (serving/demo): a VLM reads the retrieved figure/table
+    # crops directly. It replaces the text generator, so only one generative
+    # model is resident -- the text LLM is not loaded.
+    if config.generation.vision_generation:
+        vision_llm = VisionLLM(
+            model_name=config.models.caption_model,
+            device=config.models.device,
+            max_new_tokens=config.models.llm_max_new_tokens,
+        )
+        vision_llm.load()
+        generator = VisionGenerator(vision_llm=vision_llm, generation=config.generation)
+        return RAGSystem(
+            config=config,
+            retriever=retriever,
+            generator=generator,
+            llm=llm if llm is not None else vision_llm,
+        )
 
     if llm is None:
         llm = build_llm(config)

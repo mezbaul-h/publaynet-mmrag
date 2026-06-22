@@ -274,6 +274,34 @@ class VectorStore:
         )
         return _format(result)
 
+    def fetch_text_by_chunk_ids(self, chunk_ids: list[str]) -> list[dict[str, Any]]:
+        """Retrieves specific text chunks by id, preserving the requested order.
+
+        Used by graph expansion to surface the exact chunks that mention
+        graph-reached entities (e.g. a multi-hop bridge chunk) rather than
+        arbitrary chunks of a document, so the knowledge graph can promote a
+        specific chunk that vector search ranked poorly.
+
+        Args:
+            chunk_ids: Chunk identifiers in priority (graph-proximity) order.
+
+        Returns:
+            Payload dictionaries in the same order as ``chunk_ids`` (missing
+            chunks are skipped), each with ``score`` set to ``0.0``.
+        """
+        if not chunk_ids:
+            return []
+        point_ids = [_point_id(cid) for cid in chunk_ids]
+        records = self.client.retrieve(
+            collection_name=schema.TEXT_COLLECTION,
+            ids=point_ids,
+            with_payload=True,
+        )
+        by_chunk = {
+            r.payload.get("chunk_id"): dict(r.payload, score=0.0) for r in records
+        }
+        return [by_chunk[cid] for cid in chunk_ids if cid in by_chunk]
+
     def fetch_text_by_doc(self, doc_ids: list[str], limit: int) -> list[dict[str, Any]]:
         """Retrieves text chunks belonging to the given documents.
 

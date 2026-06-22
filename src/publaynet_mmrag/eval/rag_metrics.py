@@ -58,6 +58,62 @@ def _score(llm: LocalLLM, prompt: str) -> float | None:
     return max(0.0, min(1.0, value))
 
 
+def score_samples(
+    samples: list[dict[str, Any]], llm: LocalLLM, desc: str = "judge"
+) -> list[dict[str, Any]]:
+    """Scores each answer for faithfulness and relevancy (per sample).
+
+    Args:
+        samples: Rows with keys ``question``, ``answer`` and ``contexts``.
+        llm: The shared in-process language model used as the judge.
+        desc: Label for the progress bar.
+
+    Returns:
+        One dict per sample with ``faithfulness`` and ``answer_relevancy`` keys
+        (each a float in ``[0, 1]`` or ``None`` if unscorable).
+    """
+    from tqdm import tqdm
+
+    scored: list[dict[str, Any]] = []
+    for sample in tqdm(samples, desc=desc, unit="ans"):
+        context = "\n\n".join(sample.get("contexts", []))
+        scored.append(
+            {
+                "faithfulness": _score(
+                    llm,
+                    _FAITHFULNESS_PROMPT.format(
+                        context=context, answer=sample["answer"]
+                    ),
+                ),
+                "answer_relevancy": _score(
+                    llm,
+                    _RELEVANCY_PROMPT.format(
+                        question=sample["question"], answer=sample["answer"]
+                    ),
+                ),
+            }
+        )
+    return scored
+
+
+def aggregate_scores(scored: list[dict[str, Any]]) -> dict[str, float]:
+    """Means the per-sample judge scores, ignoring unscorable entries.
+
+    Args:
+        scored: Per-sample score dicts from :func:`score_samples`.
+
+    Returns:
+        Mean ``faithfulness`` and ``answer_relevancy``; an empty dict if nothing
+        could be scored.
+    """
+    metrics: dict[str, float] = {}
+    for key in ("faithfulness", "answer_relevancy"):
+        values = [s[key] for s in scored if s.get(key) is not None]
+        if values:
+            metrics[key] = sum(values) / len(values)
+    return metrics
+
+
 def evaluate_generation(
     samples: list[dict[str, Any]], llm: LocalLLM, desc: str = "judge"
 ) -> dict[str, float]:
@@ -75,31 +131,4 @@ def evaluate_generation(
     """
     if not samples:
         return {}
-
-    from tqdm import tqdm
-
-    faith: list[float] = []
-    relevancy: list[float] = []
-    for sample in tqdm(samples, desc=desc, unit="ans"):
-        context = "\n\n".join(sample.get("contexts", []))
-        f = _score(
-            llm,
-            _FAITHFULNESS_PROMPT.format(context=context, answer=sample["answer"]),
-        )
-        r = _score(
-            llm,
-            _RELEVANCY_PROMPT.format(
-                question=sample["question"], answer=sample["answer"]
-            ),
-        )
-        if f is not None:
-            faith.append(f)
-        if r is not None:
-            relevancy.append(r)
-
-    metrics: dict[str, float] = {}
-    if faith:
-        metrics["faithfulness"] = sum(faith) / len(faith)
-    if relevancy:
-        metrics["answer_relevancy"] = sum(relevancy) / len(relevancy)
-    return metrics
+    return aggregate_scores(score_samples(samples, llm, desc))
