@@ -6,28 +6,31 @@
 \setmainfont{TeX Gyre Termes}[Ligatures=TeX]   % Times-compatible; swap to "Times New Roman" if installed
 \setmonofont{TeX Gyre Cursor}                  % Courier-compatible monospace
 
-\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage[a4paper,margin=1.8cm]{geometry}
 \usepackage{amsmath}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{caption}
 \usepackage{enumitem}
 \usepackage{titlesec}
+\usepackage{indentfirst}        % indent the first paragraph after a heading too
 \usepackage[hidelinks]{hyperref}
 
 \graphicspath{{figures/}}
 \captionsetup{font=small,labelfont=bf,skip=4pt}
-\setlist[itemize]{noitemsep,topsep=2pt,leftmargin=1.4em}
-\titlespacing*{\section}{0pt}{8pt}{3pt}
+\setlist[itemize]{noitemsep,topsep=1pt,leftmargin=1.4em}
+\titlespacing*{\section}{0pt}{4pt}{1pt}
 \titleformat{\section}{\normalfont\large\bfseries}{\thesection.}{0.5em}{}
-
-\title{Multimodal RAG + Knowledge Graph over PubLayNet}
-\author{Mezbaul Haque\\[2pt]\small\texttt{mezba109@gmail.com}}
-\date{June 2026}
+\setlength{\parskip}{0pt}        % consistent: paragraphs marked by indent only
+\emergencystretch=3em            % let long lines break instead of overrunning the margin
 
 \begin{document}
-\maketitle
-\vspace{-1.6em}
+
+\begin{center}
+  {\large\bfseries Multimodal RAG + Knowledge Graph over PubLayNet}\\[3pt]
+  {\small Mezbaul Haque \quad\textbullet\quad June 2026}
+\end{center}
+\vspace{2pt}
 
 \section{Problem formulation}
 
@@ -40,17 +43,30 @@ the \texttt{lhoestq/small-publaynet-wds} subset of PubLayNet (3,812 pages; 17,36
 text chunks; 2,489 figure/table regions).
 
 \section{Data preprocessing and design choices}
-
 A \textbf{staged, resumable pipeline} writes each stage to disk and frees the GPU
-before the next, so models that cannot co-reside on a 12\,GiB card load one at a
-time. Stage 1 crops every labelled region, OCRs text regions (Surya), and packs
-reading-order text into $\le$1.2k-char \textbf{chunks} with provenance back to
-regions. Stage 1b captions a $\sim$500-crop sample of figures/tables with a VLM
-(Qwen2.5-VL-3B). Stage 2 embeds chunks (BGE-M3 dense+sparse) and crops (SigLIP2)
-into an embedded Qdrant store. Stage 3 extracts entities (GLiNER, zero-shot) and
-relations (LLM triples) into a NetworkX graph (67{,}796 nodes; 13{,}336 labelled
-relations). The result is \textbf{three aligned views} of each page---dense+sparse
-text, SigLIP image vectors, a typed entity graph---sharing region-level provenance.
+before the next, so models that cannot co-reside on a 12\,GiB card load one at a time
+and re-runs skip finished work---crash-safe on modest hardware. Each backbone is
+among the strongest open options that fit the budget, so the comparison reflects
+retrieval \emph{design}, not under-powered parts.
+\begin{itemize}
+  \item \textbf{Stage 1 (OCR \& chunking).} Crops every labelled region; OCRs text
+  with Surya (robust on dense multi-column layouts); packs reading-order text into
+  $\le$1.2k-char \textbf{chunks}---specific yet coherent---with provenance back to
+  regions.
+  \item \textbf{Stage 1b (captioning).} Captions a $\sim$500-crop sample of
+  figures/tables with a VLM (Qwen2.5-VL-3B), making visual content text-searchable.
+  \item \textbf{Stage 2 (embedding).} Embeds chunks with BGE-M3 (dense \emph{and}
+  learned-sparse from one model) and crops with SigLIP2 (shared image--text space, so
+  text reaches figures) into \textbf{embedded Qdrant}---chosen over dense-only
+  libraries because it stores dense+sparse per point and fuses them (RRF) in one
+  query, and the same API scales to a server.
+  \item \textbf{Stage 3 (knowledge graph).} Entities via GLiNER (zero-shot), relations
+  as LLM triples (typed, schema-free), into a NetworkX graph (67{,}796 nodes;
+  13{,}336 relations).
+\end{itemize}
+The result is \textbf{three aligned views} of each page---dense+sparse text, SigLIP
+vectors, a typed entity graph---sharing region-level provenance, so the enhanced arm
+can fuse channels and trace each answer to a region.
 
 \section{Architecture (baseline vs.\ enhanced)}
 
@@ -66,15 +82,10 @@ under study are modality and structured knowledge.
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.78\linewidth]{architecture-baseline.png}
-  \caption{Baseline: dense text retrieval feeds the generator.}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.95\linewidth]{architecture-enhanced.png}
-  \caption{Enhanced: three retrieval channels are fused by rank-weighted RRF,
-  reranked, then generated.}
+  \includegraphics[width=0.76\linewidth]{architecture-enhanced.png}
+  \caption{Enhanced pipeline: hybrid-text, SigLIP-image, and KG-expansion channels
+  fused by rank-weighted RRF, reranked, then answered. Baseline diagram and a worked
+  HER2 example: README, \emph{How it works}.}
 \end{figure}
 
 \textbf{Fusion by Reciprocal Rank Fusion (RRF)} is the central design choice. Each
@@ -169,10 +180,10 @@ categorical, not marginal. These signals existed before but were inert under
 raw-score merging; \textbf{rank-based RRF fusion} converts them into gains, so the
 fusion \emph{mechanism} matters as much as the channels.
 
-\textbf{Insights.} (1)~A text-gold-only benchmark structurally hides multimodal/KG
-value---segmented evaluation is essential. (2)~Graph and sparse retrieval are partly
+\textbf{Insights.} \textbf{(1)}~A text-gold-only benchmark structurally hides multimodal/KG
+value---segmented evaluation is essential. \textbf{(2)}~Graph and sparse retrieval are partly
 redundant on multi-hop, but the graph captures most (0.61 vs 0.41) by reaching chunks
-sharing \emph{no} surface terms with the query. (3)~Equal-weight fusion trades a
+sharing \emph{no} surface terms with the query. \textbf{(3)}~Equal-weight fusion trades a
 little text precision for large cross-modal recall (overall R@1
 0.51$\rightarrow$0.76); a per-query router is the clear next step.
 
@@ -187,20 +198,13 @@ true $>$5{,}000)---and prompted on the same table GPT and Claude also miss cells
 (true HER2 min 3 vs their 4/6). Salient values are reliable; pinpoint extremes are
 not, even for frontier models---the known failure mode of table understanding. The
 robust fix for tables is structure OCR (parse cells $\rightarrow$ compute), not a
-bigger VLM; for charts, where OCR does not apply, a sharper/stronger VLM is the lever.
-
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.22\textwidth]{her2-table.png}
-  \caption{The HER2/EC50 table (PMC5384386, p.2): dense, low-resolution cells that
-  even GPT and Claude misread.}
-\end{figure}
+bigger VLM; for charts, where OCR does not apply, a sharper/stronger VLM is the lever (the table is shown in the README).
 
 \section{Reproduction}
 
 \texttt{pip install -e .}, then run stages \texttt{01}, \texttt{01b}, \texttt{02},
 \texttt{03} in order, and
-\texttt{04\_run\_eval.py --variants baseline,abl\_rerank,abl\_hybrid,abl\_image,abl\_graph,enhanced}
+\texttt{04\_run\_eval.py --variants baseline,\allowbreak abl\_rerank,\allowbreak abl\_hybrid,\allowbreak abl\_image,\allowbreak abl\_graph,\allowbreak enhanced}
 (full commands in the README). Stages are resumable; \texttt{dev/test.sh} covers the
 new logic (fusion, KG, multi-hop filter, metric segmentation) with no GPU.
 

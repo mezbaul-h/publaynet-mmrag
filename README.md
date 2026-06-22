@@ -183,7 +183,18 @@ Stage 4    build questions, run both arms, score -> comparison.json
 on. Each channel produces a ranked list, and the lists are combined with **weighted
 Reciprocal Rank Fusion** (by rank, not raw score) so a figure or a graph-reached
 chunk can reach the top results instead of being buried under text hits. Reranking
-then re-scores the merged set.
+then re-scores the merged set. The two arms are shown below.
+
+<p align="center"><img src="figures/architecture-baseline.png" width="640" alt="Baseline architecture diagram"></p>
+
+*Baseline — a single text channel: dense embedding, vector search over text chunks,
+top-k chunks, then the generator.*
+
+<p align="center"><img src="figures/architecture-enhanced.png" width="720" alt="Enhanced architecture diagram"></p>
+
+*Enhanced — hybrid text, SigLIP image, and KG-expansion channels are fused by
+rank-weighted RRF, reranked by a cross-encoder, then answered by the LLM (or, in the
+demo/API, a VLM that reads the retrieved crops).*
 
 **Evaluation is segmented** into three question types so each channel's value is
 visible: *text* (gold is a chunk → text retrieval), *visual* (gold is a figure →
@@ -193,6 +204,18 @@ image retrieval), and *multihop* (gold is a chunk reachable only through the gra
 **Explainability**: every answer carries a provenance record — which evidence was
 used, from which channel, its score, whether it was cited — plus the knowledge-graph
 paths and the cited figure crops.
+
+**Known limit (visual answers).** Retrieval returns the correct figure, but reading
+*exact* values off a dense, low-resolution table is hard for any VLM. On the table
+below (PMC5384386), our model reads the maximum HER2 value (4,900) correctly yet
+misreads the EC50 maximum — and GPT and Claude miss cells on it too. The robust fix
+for tables is structured OCR (parse cells, then compute), not a bigger model; for
+charts, where OCR does not apply, a sharper/stronger VLM is the lever.
+
+<p align="center"><img src="figures/her2-table.png" width="220" alt="HER2/EC50 table crop"></p>
+
+*A dense HER2/EC50 table (PMC5384386, p.2) — pinpoint cell values are unreliable even
+for frontier VLMs.*
 
 ## Project layout
 
