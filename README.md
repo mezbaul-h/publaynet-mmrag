@@ -135,6 +135,13 @@ The full analysis, per-component attribution, and generation-quality scores are 
 
 Both need an extra installed (see [Optional extras](#optional-extras)).
 
+> **Important — build the data first.** The demo and the API query the prebuilt
+> index and knowledge graph, so you must run the pipeline before starting them:
+> **Stages 1, 1b, 2 and 3** (see [Reproduce the results](#reproduce-the-results)).
+> Stage 1b is needed for visual answers and the figure gallery; the knowledge graph
+> (Stage 3) is needed for the graph channel in `enhanced` mode. **Stage 4
+> (evaluation) is not required.** Without the index/graph on disk, startup fails.
+
 ```bash
 # Web UI (Gradio): question box, answer, evidence, and a figure gallery.
 python app/demo.py

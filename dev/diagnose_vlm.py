@@ -5,7 +5,7 @@ This isolates the VLM from the RAG pipeline. It feeds a *single image* plus a
 question straight to the model -- no retrieval, no caption, no other evidence --
 so you can see what the model actually reads off the crop, and compare models or
 input resolutions side by side. (This is the same image the demo struggled with:
-a dense HER2/EC50 table, shipped here as ``dev/her2_table.png``.)
+a dense HER2/EC50 table, shipped as ``figures/her2-table.png``.)
 
 There is no "Qwen3.5-VL"; the pinned ``transformers==4.56.1`` supports the
 Qwen2.x-VL line only (it does not recognise ``qwen3-vl``). Compare any ids that
@@ -26,7 +26,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-_DEFAULT_IMAGE = os.path.join(os.path.dirname(__file__), "her2_table.png")
+_DEFAULT_IMAGE = os.path.join(
+    os.path.dirname(__file__), os.pardir, "figures", "her2-table.png"
+)
 _FALLBACK_IMAGE = os.path.join(
     os.path.dirname(__file__), os.pardir, "data", "crops", "PMC5384386_2_457455.png"
 )

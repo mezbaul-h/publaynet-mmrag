@@ -47,7 +47,9 @@ quant = ["bitsandbytes>=0.43"]
 serve = ["fastapi>=0.110", "uvicorn>=0.29"]
 # Interactive demo.
 demo = ["gradio>=4.40"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+# Tests, linting, and the report figure scripts (dev/make_figures.py). matplotlib
+# is also a core dependency; it is pinned here too so the dev tooling is explicit.
+dev = ["pytest>=8.0", "ruff>=0.4", "matplotlib>=3.8"]
 # Everything except quant; install quant separately if you need 4-bit.
 all = ["publaynet-mmrag[serve,demo,dev]"]
 

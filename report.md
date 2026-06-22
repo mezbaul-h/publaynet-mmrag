@@ -1,13 +1,16 @@
 # Multimodal RAG + Knowledge Graph over PubLayNet
 
-**Task & data.** Answer scientific questions over document pages by retrieving and
-reasoning across **text and visual** elements, augmenting retrieval with a small
-**knowledge graph (KG)**, and producing **explainable** answers — and quantify
-whether non-text modality and structured knowledge beat a text-only RAG baseline.
-Data: the `lhoestq/small-publaynet-wds` subset of PubLayNet (3,812 pages; 17,366
-text chunks; 2,489 figure/table regions).
+## 1. Problem formulation
 
-## 1. Preprocessing & multimodal representation
+Answer scientific questions over document pages by retrieving and reasoning across
+**text and visual** elements, augmenting retrieval with a small **knowledge graph
+(KG)**, and producing **explainable**, cited answers. The central question is
+whether non-text modality (figures/tables) and structured knowledge measurably beat
+a **text-only RAG baseline**, in both retrieval and answer quality. Data: the
+`lhoestq/small-publaynet-wds` subset of PubLayNet (3,812 pages; 17,366 text chunks;
+2,489 figure/table regions).
+
+## 2. Data preprocessing and design choices
 
 A **staged, resumable pipeline** writes each stage to disk and frees the GPU
 before the next, so models that cannot co-reside on a 12 GiB card load one at a
@@ -21,7 +24,7 @@ entities (GLiNER, zero-shot) and relations (LLM triples) into a NetworkX graph
 of each page — dense+sparse text, SigLIP image vectors, a typed entity graph —
 sharing region-level provenance.
 
-## 2. Architecture: baseline vs enhanced
+## 3. Architecture (baseline vs. enhanced)
 
 One retriever implements both arms; four flags select channels
 (`use_sparse / use_image / use_graph / use_rerank`), so the only variables under
@@ -30,6 +33,14 @@ study are modality and structured knowledge.
 * **Baseline** — dense text retrieval only.
 * **Enhanced** — dense+sparse hybrid text **+** SigLIP2 text→image figure
   retrieval **+** KG neighbour expansion **+** cross-encoder reranking.
+
+<p align="center"><img src="figures/architecture-baseline.png" width="640" alt="Baseline architecture"></p>
+
+*Figure 1 — Baseline: dense text retrieval feeds the generator.*
+
+<p align="center"><img src="figures/architecture-enhanced.png" width="680" alt="Enhanced architecture"></p>
+
+*Figure 2 — Enhanced: three retrieval channels are fused by rank-weighted RRF, reranked, then generated.*
 
 **Fusion by Reciprocal Rank Fusion (RRF)** is the central design choice. Each
 channel returns a ranked list; fused score = Σ `w/(k+rank)`. Channel raw scores
@@ -47,7 +58,7 @@ paths and cited crops. Serving/the demo can instead generate with a **VLM that r
 the crops directly** (true visual QA); the evaluation keeps the text generator for
 comparable numbers.
 
-## 3. Evaluation methodology
+## 4. Experiments and evaluation methodology
 
 PubLayNet ships no QA, so we synthesise a grounded set (same LLM/corpus for both
 arms). The key point is **segmented** evaluation: a single text-gold set cannot
@@ -68,7 +79,7 @@ a document fallback only for text. Generation metrics (faithfulness,
 answer-relevancy) use an in-process LLM judge per split. We run `baseline`, four
 single-channel ablations, and `enhanced`.
 
-## 4. Key results
+## 5. Key results
 
 **Retrieval (Recall@5 / MRR).**
 
@@ -101,7 +112,7 @@ multihop, 0.38→0.60) once the right evidence is retrieved. Pure-text faithfuln
 dips (0.83→0.72) as cross-modal context adds some off-topic evidence — a cost of
 fusing modalities without routing.
 
-## 5. Discussion
+## 6. Discussion on the value of multimodal + KG, limitations, and insights
 
 **Value.** Each non-text channel unlocks a question class the baseline cannot
 answer *at all* (visual 0→0.56; multihop 0→0.73) — categorical, not marginal. These
@@ -129,7 +140,12 @@ the known failure mode of table understanding. The robust fix for tables is
 structure OCR (parse cells → compute), not a bigger VLM; for charts, where OCR does
 not apply, a sharper/stronger VLM is the lever.
 
-## 6. Reproduction
+<p align="center"><img src="figures/her2-table.png" width="220" alt="HER2/EC50 table crop"></p>
+
+*Figure 3 — The HER2/EC50 table (PMC5384386, p.2): dense, low-resolution cells that
+even GPT and Claude misread.*
+
+## 7. Reproduction
 
 `pip install -e .`, then run stages `01 → 01b → 02 →
 03` and `04_run_eval.py --variants baseline,abl_rerank,abl_hybrid,abl_image,abl_graph,enhanced`
