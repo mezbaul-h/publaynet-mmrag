@@ -12,17 +12,29 @@ a **text-only RAG baseline**, in both retrieval and answer quality. Data: the
 
 ## 2. Data preprocessing and design choices
 
-A **staged, resumable pipeline** writes each stage to disk and frees the GPU
-before the next, so models that cannot co-reside on a 12 GiB card load one at a
-time. Stage 1 crops every labelled region,
-OCRs text regions (Surya), and packs reading-order text into ≤1.2k-char **chunks**
-with provenance back to regions. Stage 1b captions a ~500-crop sample of
-figures/tables with a VLM (Qwen2.5-VL-3B). Stage 2 embeds chunks (BGE-M3
-dense+sparse) and crops (SigLIP2) into an embedded Qdrant store. Stage 3 extracts
-entities (GLiNER, zero-shot) and relations (LLM triples) into a NetworkX graph
-(67,796 nodes; 13,336 labelled relations). The result is **three aligned views**
-of each page — dense+sparse text, SigLIP image vectors, a typed entity graph —
-sharing region-level provenance.
+A **staged, resumable pipeline** writes each stage to disk and frees the GPU before
+the next, so models that cannot co-reside on a 12 GiB card load one at a time and
+re-runs skip finished work — crash-safe on modest hardware. Each backbone is among
+the strongest open options that fit the budget, so the comparison reflects retrieval
+*design*, not under-powered parts.
+
+* **Stage 1 (OCR & chunking).** Crops every labelled region; OCRs text with Surya
+  (robust on dense multi-column layouts); packs reading-order text into ≤1.2k-char
+  **chunks** — specific yet coherent — with provenance back to regions.
+* **Stage 1b (captioning).** Captions a ~500-crop sample of figures/tables with a
+  VLM (Qwen2.5-VL-3B), making visual content text-searchable.
+* **Stage 2 (embedding).** Embeds chunks with BGE-M3 (dense *and* learned-sparse from
+  one model) and crops with SigLIP2 (shared image–text space, so text reaches
+  figures) into **embedded Qdrant** — chosen over dense-only libraries because it
+  stores dense+sparse per point and fuses them (RRF) in one query, and the same API
+  scales to a server.
+* **Stage 3 (knowledge graph).** Entities via GLiNER (zero-shot), relations as LLM
+  triples (typed, schema-free), into a NetworkX graph (67,796 nodes; 13,336
+  relations).
+
+The result is **three aligned views** of each page — dense+sparse text, SigLIP
+vectors, a typed entity graph — sharing region-level provenance, so the enhanced arm
+can fuse channels and trace each answer to a region.
 
 ## 3. Architecture (baseline vs. enhanced)
 
@@ -34,13 +46,11 @@ study are modality and structured knowledge.
 * **Enhanced** — dense+sparse hybrid text **+** SigLIP2 text→image figure
   retrieval **+** KG neighbour expansion **+** cross-encoder reranking.
 
-<p align="center"><img src="figures/architecture-baseline.png" width="640" alt="Baseline architecture"></p>
-
-*Figure 1 — Baseline: dense text retrieval feeds the generator.*
-
 <p align="center"><img src="figures/architecture-enhanced.png" width="680" alt="Enhanced architecture"></p>
 
-*Figure 2 — Enhanced: three retrieval channels are fused by rank-weighted RRF, reranked, then generated.*
+*Enhanced pipeline: hybrid-text, SigLIP-image, and KG-expansion channels fused by
+rank-weighted RRF, reranked, then answered. The baseline diagram and a worked HER2
+example are in the README (How it works).*
 
 **Fusion by Reciprocal Rank Fusion (RRF)** is the central design choice. Each
 channel returns a ranked list; fused score = Σ `w/(k+rank)`. Channel raw scores
@@ -138,16 +148,11 @@ on the same table GPT and Claude also miss cells (true HER2 min 3 vs their 4/6).
 Salient values are reliable; pinpoint extremes are not, even for frontier models —
 the known failure mode of table understanding. The robust fix for tables is
 structure OCR (parse cells → compute), not a bigger VLM; for charts, where OCR does
-not apply, a sharper/stronger VLM is the lever.
-
-<p align="center"><img src="figures/her2-table.png" width="220" alt="HER2/EC50 table crop"></p>
-
-*Figure 3 — The HER2/EC50 table (PMC5384386, p.2): dense, low-resolution cells that
-even GPT and Claude misread.*
+not apply, a sharper/stronger VLM is the lever (the table is shown in the README).
 
 ## 7. Reproduction
 
-`pip install -e .`, then run stages `01 → 01b → 02 →
-03` and `04_run_eval.py --variants baseline,abl_rerank,abl_hybrid,abl_image,abl_graph,enhanced`
+`pip install -e .`, then run stages `01`, `01b`, `02`, `03` in order, and
+`04_run_eval.py --variants baseline,abl_rerank,abl_hybrid,abl_image,abl_graph,enhanced`
 (full commands in the README). Stages are resumable; `dev/test.sh` covers the new
 logic (fusion, KG, multi-hop filter, metric segmentation) with no GPU.
